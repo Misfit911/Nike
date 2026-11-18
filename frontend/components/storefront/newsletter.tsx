@@ -26,7 +26,7 @@ export function Newsletter() {
   }
 
   return (
-    <section className="bg-[#0c1411] px-6 py-20 text-center text-white" style={{margin: "25px 0 25px"}}>
+    <section className="bg-[#0c1411] px-6 py-25 text-center text-white" style={{margin: "25px 0 25px"}}>
       <h2 className="text-4xl font-black leading-[0.95] tracking-tight md:text-6xl">Become a Nike Member</h2>
       <p className="mt-4 text-base text-white/90">Get the latest products from Nike, plus access to exclusive sales and events.</p>
       {status === "done" ? (

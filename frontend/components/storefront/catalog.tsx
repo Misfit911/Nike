@@ -121,12 +121,14 @@ export function Catalog() {
       {products.length === 0 ? (
         <p className="py-16 text-center text-sm text-muted">No products match these filters.</p>
       ) : (
-        <div className="-mx-4 mt-4 grid grid-cols-2 gap-x-1 gap-y-8 md:mx-0 md:grid-cols-3 md:gap-x-3 md:gap-y-10 lg:grid-cols-4">
-          {products.slice(0, 4).map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
+        <>
+          <div className="-mx-4 mt-4 grid grid-cols-2 gap-x-1 gap-y-8 md:mx-0 md:grid-cols-3 md:gap-x-3 md:gap-y-10 lg:grid-cols-4">
+            {products.slice(0, 4).map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
           {products.length >= 4 && hero ? (
-            <div className="col-span-full">
+            <div className="-mx-4 my-8 md:-mx-6 md:my-10">
               <HeroPanel
                 image={hero.image}
                 eyebrow={hero.eyebrow}
@@ -136,10 +138,14 @@ export function Catalog() {
               />
             </div>
           ) : null}
-          {products.slice(4).map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
+          {products.length > 4 ? (
+            <div className="-mx-4 grid grid-cols-2 gap-x-1 gap-y-8 md:mx-0 md:grid-cols-3 md:gap-x-3 md:gap-y-10 lg:grid-cols-4">
+              {products.slice(4).map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          ) : null}
+        </>
       )}
     </section>
   );
@@ -151,20 +157,18 @@ export function HeroPanel({
   headline,
   buttonLabel,
   onShop,
-  tall = false,
 }: {
   image: string;
   eyebrow: string;
   headline: string;
   buttonLabel: string;
   onShop: () => void;
-  tall?: boolean;
 }) {
   return (
-    <section className={`relative flex items-end justify-center overflow-hidden ${tall ? "min-h-[78vh]" : "min-h-[68vh]"}`}>
-      <MediaImage src={image} alt="" className="absolute inset-0 h-full w-full object-cover" />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-black/15" />
-      <div className="relative z-10 flex flex-col items-center px-6 pb-14 text-center text-white">
+    <section className="relative w-full">
+      <MediaImage src={image} alt="" className="block h-auto w-full" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-black/15" />
+      <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center px-6 pb-10 text-center text-white md:pb-14">
         <p className="text-base">{eyebrow}</p>
         <h2 className="mt-2 max-w-md whitespace-pre-line text-4xl font-black uppercase leading-[0.95] tracking-tight md:text-6xl">
           {headline}

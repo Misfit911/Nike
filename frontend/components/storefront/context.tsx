@@ -161,18 +161,31 @@ export function StoreProvider({ data, children }: { data: StorefrontPayload; chi
       setOverlays((current) => [...current, withId(overlay)]);
       pushHistory();
     };
+    const dismissOverlays = () => {
+      const steps = pushedRef.current;
+      if (steps > 0) {
+        suppressPopRef.current = steps;
+        pushedRef.current = 0;
+        window.history.go(-steps);
+        window.setTimeout(() => {
+          suppressPopRef.current = 0;
+        }, 0);
+      }
+      setOverlays([]);
+    };
     return {
       data,
       department,
       chooseDepartment: (next) => {
         setDepartment(next);
         setFilters(emptyFilters);
-        backHistory();
+        dismissOverlays();
         scrollToCatalog();
       },
       searchOpen,
       searchQuery,
       toggleSearch: () => {
+        dismissOverlays();
         if (searchOpen) setSearchQuery("");
         else scrollToCatalog();
         setSearchOpen((open) => !open);
@@ -239,16 +252,7 @@ export function StoreProvider({ data, children }: { data: StorefrontPayload; chi
         setOverlays([withId({ type: "success", receipt })]);
       },
       goHome: () => {
-        const steps = pushedRef.current;
-        if (steps > 0) {
-          suppressPopRef.current = steps;
-          pushedRef.current = 0;
-          window.history.go(-steps);
-          window.setTimeout(() => {
-            suppressPopRef.current = 0;
-          }, 0);
-        }
-        setOverlays([]);
+        dismissOverlays();
         setSearchOpen(false);
         setSearchQuery("");
         window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 0);

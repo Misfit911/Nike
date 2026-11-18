@@ -246,7 +246,7 @@ function Shell() {
         </>
       ) : null}
       {hero1 ? (
-        <HeroPanel image={hero1.image} eyebrow={hero1.eyebrow} headline={hero1.headline} buttonLabel={hero1.buttonLabel} onShop={store.scrollToCatalog} tall />
+        <HeroPanel image={hero1.image} eyebrow={hero1.eyebrow} headline={hero1.headline} buttonLabel={hero1.buttonLabel} onShop={store.scrollToCatalog} />
       ) : null}
       {store.data.highlights.length > 0 ? (
         <div className="overflow-hidden py-3">
@@ -260,7 +260,7 @@ function Shell() {
         </div>
       ) : null}
       {hero2 ? (
-        <HeroPanel image={hero2.image} eyebrow={hero2.eyebrow} headline={hero2.headline} buttonLabel={hero2.buttonLabel} onShop={store.scrollToCatalog} tall />
+        <HeroPanel image={hero2.image} eyebrow={hero2.eyebrow} headline={hero2.headline} buttonLabel={hero2.buttonLabel} onShop={store.scrollToCatalog} />
       ) : null}
       <Catalog />
       <Newsletter />
