@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties, type SyntheticEvent } from "react";
 import { applyFilters, filterOptions, filtersActive, onSale } from "@/lib/catalog";
 import { formatKes } from "@/lib/money";
 import { departmentHeading, type Product } from "@/lib/types";
@@ -164,9 +164,24 @@ export function HeroPanel({
   buttonLabel: string;
   onShop: () => void;
 }) {
+  const [ratio, setRatio] = useState<number | null>(null);
+  function rememberSize(image: HTMLImageElement) {
+    if (image.naturalWidth > 0 && image.naturalHeight > 0) setRatio(image.naturalWidth / image.naturalHeight);
+  }
   return (
-    <section className="relative w-full">
-      <MediaImage src={image} alt="" className="block h-auto w-full" />
+    <section
+      className={`relative w-full @container ${ratio ? "md:h-[min(calc(100cqw/var(--hero-ratio)),100dvh)] md:overflow-hidden" : ""}`}
+      style={ratio ? ({ "--hero-ratio": String(ratio) } as CSSProperties) : undefined}
+    >
+      <MediaImage
+        src={image}
+        alt=""
+        ref={(node) => {
+          if (node?.complete) rememberSize(node);
+        }}
+        onLoad={(event: SyntheticEvent<HTMLImageElement>) => rememberSize(event.currentTarget)}
+        className={`block h-auto w-full ${ratio ? "md:absolute md:inset-0 md:h-full md:object-cover" : ""}`}
+      />
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-black/15" />
       <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center px-6 pb-10 text-center text-white md:pb-14">
         <p className="text-base">{eyebrow}</p>
