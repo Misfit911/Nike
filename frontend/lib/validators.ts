@@ -61,9 +61,17 @@ export const productInputSchema = z.object({
   sizes: z.array(
     z.object({
       label: z.string().trim().min(1).max(40),
-      inStock: z.boolean(),
     }),
   ),
+  stock: z
+    .array(
+      z.object({
+        colorName: z.string().trim().max(40).default(""),
+        sizeLabel: z.string().trim().max(40).default(""),
+        quantity: z.number().int().min(0).max(100_000),
+      }),
+    )
+    .max(400),
   images: z
     .array(
       z.object({
@@ -73,7 +81,34 @@ export const productInputSchema = z.object({
       }),
     )
     .min(1),
-});
+})
+  .superRefine((value, context) => {
+    const colorNames = value.colors.map((color) => color.name.trim().toLowerCase());
+    const sizeLabels = value.sizes.map((size) => size.label.trim().toLowerCase());
+    if (new Set(colorNames).size !== colorNames.length) {
+      context.addIssue({ code: "custom", path: ["colors"], message: "Colour names must be unique" });
+    }
+    if (new Set(sizeLabels).size !== sizeLabels.length) {
+      context.addIssue({ code: "custom", path: ["sizes"], message: "Size labels must be unique" });
+    }
+    const expectedColors = colorNames.length > 0 ? colorNames : [""];
+    const expectedSizes = sizeLabels.length > 0 ? sizeLabels : [""];
+    const stockKeys = new Set(
+      value.stock.map((row) => `${row.colorName.trim().toLowerCase()}|${row.sizeLabel.trim().toLowerCase()}`),
+    );
+    for (const colorName of expectedColors) {
+      for (const sizeLabel of expectedSizes) {
+        if (!stockKeys.has(`${colorName}|${sizeLabel}`)) {
+          context.addIssue({
+            code: "custom",
+            path: ["stock"],
+            message: "Enter a quantity for every size and colour",
+          });
+          return;
+        }
+      }
+    }
+  });
 
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
 export type ProductInput = z.infer<typeof productInputSchema>;

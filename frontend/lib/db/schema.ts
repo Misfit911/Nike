@@ -1,4 +1,4 @@
-import { boolean, integer, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, primaryKey, text, timestamp, unique } from "drizzle-orm/pg-core";
 
 export { subscribers } from "@/lib/db/subscribers-table";
 
@@ -82,6 +82,20 @@ export const productSizes = pgTable("product_sizes", {
   inStock: boolean("in_stock").notNull().default(true),
 });
 
+export const productInventory = pgTable(
+  "product_inventory",
+  {
+    id: text("id").primaryKey(),
+    productId: text("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    colorName: text("color_name").notNull().default(""),
+    sizeLabel: text("size_label").notNull().default(""),
+    quantity: integer("quantity").notNull().default(0),
+  },
+  (table) => [unique("product_inventory_variant_unique").on(table.productId, table.colorName, table.sizeLabel)],
+);
+
 export const productImages = pgTable("product_images", {
   id: text("id").primaryKey(),
   productId: text("product_id")
@@ -114,6 +128,7 @@ export const orders = pgTable("orders", {
   mpesaCheckoutRequestId: text("mpesa_checkout_request_id"),
   mpesaMerchantRequestId: text("mpesa_merchant_request_id"),
   mpesaReceipt: text("mpesa_receipt"),
+  inventoryHeld: boolean("inventory_held").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

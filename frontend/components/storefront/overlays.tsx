@@ -4,6 +4,9 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { AnimatePresence } from "framer-motion";
 import { filterOptions, onSale, PRICE_LABELS } from "@/lib/catalog";
 import { deliveryFeeFor, formatKes } from "@/lib/money";
+import { orderStatusLabel } from "@/lib/order-status";
+import { bagDeliveryNote } from "@/lib/policy";
+import { selectionQuantity, variantQuantity } from "@/lib/stock";
 import { departmentLabel, DEPARTMENTS, type OrderReceipt, type Product } from "@/lib/types";
 import { MediaImage } from "@/components/media-image";
 import { CheckoutSheet } from "@/components/storefront/checkout";
@@ -91,21 +94,24 @@ function OverlayBody({ overlay }: { overlay: Overlay }) {
 }
 
 function MenuSheet() {
-  const { data, chooseDepartment, push, back, toggleBag } = useStore();
+  const { data, chooseDepartment, push, back, toggleBag, navDepartments } = useStore();
+  const drawerDepartments = DEPARTMENTS.filter((department) => !navDepartments.includes(department));
   return (
     <div className="px-6 py-6">
       <div className="flex justify-between">
         <BackLink onClick={back} />
       </div>
-      <nav className="mt-8 space-y-5">
-        {DEPARTMENTS.map((department) => (
-          <button key={department} type="button" onClick={() => chooseDepartment(department)} className="flex w-full items-center justify-between text-2xl">
-            {departmentLabel(department)}
-            <IconChevron className="-rotate-90" />
-          </button>
-        ))}
-      </nav>
-      <div className="mt-10 space-y-4 border-t border-line pt-6 text-base">
+      {drawerDepartments.length > 0 ? (
+        <nav className="mt-8 space-y-5">
+          {drawerDepartments.map((department) => (
+            <button key={department} type="button" onClick={() => chooseDepartment(department)} className="flex w-full items-center justify-between text-2xl">
+              {departmentLabel(department)}
+              <IconChevron className="-rotate-90" />
+            </button>
+          ))}
+        </nav>
+      ) : null}
+      <div className={`${drawerDepartments.length > 0 ? "mt-10 border-t border-line pt-6" : "mt-8"} space-y-4 text-base`}>
         <button type="button" className="block" onClick={toggleBag}>Bag</button>
         <button type="button" className="block" onClick={() => push({ type: "orders" })}>Orders</button>
         <button type="button" className="block" onClick={() => push({ type: "favourites" })}>Favourites</button>
@@ -122,6 +128,7 @@ function ProductSheet({ productId }: { productId: string }) {
   const [color, setColor] = useState<string | null>(product?.colors[0]?.name ?? null);
   const [imageIndex, setImageIndex] = useState(0);
   const [sizeError, setSizeError] = useState(false);
+  const [stockError, setStockError] = useState<string | null>(null);
   const swipeStart = useRef<number | null>(null);
   const saved = product ? store.favourites.includes(product.id) : false;
 
@@ -130,6 +137,7 @@ function ProductSheet({ productId }: { productId: string }) {
     setColor(product?.colors[0]?.name ?? null);
     setImageIndex(0);
     setSizeError(false);
+    setStockError(null);
   }, [productId, product?.colors]);
 
   useEffect(() => {
@@ -165,6 +173,14 @@ function ProductSheet({ productId }: { productId: string }) {
       return;
     }
     if (!product) return;
+    const available = selectionQuantity(product, color, size);
+    const key = `${product.id}|${size ?? ""}|${color ?? ""}`;
+    const inBag = store.bag.find((line) => line.key === key)?.quantity ?? 0;
+    if (available == null || available - inBag < 1) {
+      setStockError(available && available > 0 ? `Only ${available} available in that size and colour.` : "That size and colour is sold out.");
+      return;
+    }
+    setStockError(null);
     store.addToBag({ productId: product.id, size, color });
   }
 
@@ -226,7 +242,11 @@ function ProductSheet({ productId }: { productId: string }) {
               key={entry.id}
               type="button"
               aria-label={entry.name}
-              onClick={() => setColor(entry.name)}
+              onClick={() => {
+                setColor(entry.name);
+                setStockError(null);
+                if (size && product && variantQuantity(product.stock, entry.name, size) < 1) setSize(null);
+              }}
               className={`h-8 w-8 rounded-full border ${color === entry.name ? "border-ink" : "border-line"}`}
               style={{ background: entry.hex }}
             />
@@ -235,24 +255,29 @@ function ProductSheet({ productId }: { productId: string }) {
       ) : null}
       {product.sizes.length > 0 ? (
         <div className="px-5 pt-5">
-          <p className="text-base font-medium">Select Size (UK)</p>
+          <p className="text-base font-medium">Select Size</p>
           <div className="mt-3 grid grid-cols-2 gap-2">
-            {product.sizes.map((entry) => (
+            {product.sizes.map((entry) => {
+              const available = variantQuantity(product.stock, color, entry.label);
+              return (
               <button
                 key={entry.id}
                 type="button"
-                disabled={!entry.inStock}
+                disabled={available < 1}
                 onClick={() => {
                   setSize(entry.label);
                   setSizeError(false);
+                  setStockError(null);
                 }}
                 className={`rounded-md border py-3 text-sm ${size === entry.label ? "border-ink bg-ink text-white" : "border-line"} disabled:text-muted disabled:line-through`}
               >
-                {entry.label}
+                {available < 1 ? `${entry.label} · Sold out` : entry.label}
               </button>
-            ))}
+              );
+            })}
           </div>
           {sizeError ? <p className="mt-2 text-sm text-sale">Select a size</p> : null}
+          {stockError ? <p className="mt-2 text-sm text-sale">{stockError}</p> : null}
         </div>
       ) : null}
       <div className="px-5 pt-4">
@@ -321,9 +346,11 @@ function BagSheet() {
       ) : (
         <>
           <div className="mx-5 mt-4 rounded-md border border-line p-4 text-sm leading-6">
-            {delivery === 0
-              ? "This order qualifies for free delivery."
-              : `Nairobi delivery is ${formatKes(delivery)}. Orders of ${formatKes(store.data.settings.freeDeliveryThresholdCents)} or more ship free. Pickup is free.`}
+            {bagDeliveryNote({
+              feeLabel: formatKes(delivery),
+              thresholdLabel: formatKes(store.data.settings.freeDeliveryThresholdCents),
+              free: delivery === 0,
+            })}
           </div>
           <ul className="mt-4 space-y-5 px-5">
             {store.bag.map((line) => {
@@ -341,7 +368,15 @@ function BagSheet() {
                     <div className="mt-3 flex items-center gap-3">
                       <button type="button" aria-label="Decrease quantity" className="h-8 w-8 rounded-full border border-line" onClick={() => store.setQty(line.key, line.quantity - 1)}>-</button>
                       <span>{line.quantity}</span>
-                      <button type="button" aria-label="Increase quantity" className="h-8 w-8 rounded-full border border-line" onClick={() => store.setQty(line.key, Math.min(10, line.quantity + 1))}>+</button>
+                      <button
+                        type="button"
+                        aria-label="Increase quantity"
+                        className="h-8 w-8 rounded-full border border-line disabled:text-muted"
+                        disabled={product ? line.quantity >= Math.min(10, variantQuantity(product.stock, line.color, line.size)) : false}
+                        onClick={() => store.setQty(line.key, line.quantity + 1)}
+                      >
+                        +
+                      </button>
                       <button type="button" className="ml-auto underline underline-offset-4" onClick={() => store.removeLine(line.key)}>Remove</button>
                     </div>
                   </div>
@@ -465,7 +500,7 @@ function ReceiptSummary({ receipt }: { receipt: OrderReceipt }) {
   return (
     <article className="rounded-xl border border-line p-4 text-sm">
       <p className="font-medium">{receipt.orderNumber}</p>
-      <p className="capitalize text-muted">{receipt.status}</p>
+      <p className="text-muted">{orderStatusLabel(receipt.status)}</p>
       <p className="mt-2">{formatKes(receipt.totalCents)}</p>
       <ul className="mt-2 space-y-1 text-muted">
         {receipt.items.map((item, index) => (

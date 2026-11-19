@@ -14,11 +14,14 @@ import {
   saveProductAction,
   saveSettingsAction,
 } from "@/app/admin/actions";
+import { OrdersPanel } from "@/app/admin/orders-panel";
 import { ImageField } from "@/components/image-field";
 import { MediaImage } from "@/components/media-image";
+import { DEMO_DELIVERY_RETURNS } from "@/lib/policy";
+import { stockCombinations } from "@/lib/stock";
 import { DEPARTMENTS, departmentLabel, type Department, type Gender, type Hero, type Product, type StorefrontPayload } from "@/lib/types";
 
-type Tab = "store" | "heroes" | "highlights" | "categories" | "products";
+type Tab = "store" | "orders" | "heroes" | "highlights" | "categories" | "products";
 
 export function Studio({ data }: { data: StorefrontPayload }) {
   const [tab, setTab] = useState<Tab>("store");
@@ -37,6 +40,7 @@ export function Studio({ data }: { data: StorefrontPayload }) {
         {(
           [
             ["store", "Store"],
+            ["orders", "Orders"],
             ["heroes", "Heroes"],
             ["highlights", "Highlights"],
             ["categories", "Categories"],
@@ -50,6 +54,7 @@ export function Studio({ data }: { data: StorefrontPayload }) {
       </div>
       <div className="mx-auto min-w-0 max-w-3xl px-4 pb-16 [&_form]:min-w-0 [&_input]:max-w-full [&_input]:min-w-0 [&_select]:max-w-full [&_textarea]:max-w-full">
         {tab === "store" ? <StoreForm data={data} /> : null}
+        {tab === "orders" ? <OrdersPanel /> : null}
         {tab === "heroes" ? <HeroForms heroes={data.heroes} /> : null}
         {tab === "highlights" ? <Highlights data={data} /> : null}
         {tab === "categories" ? <Categories data={data} /> : null}
@@ -267,7 +272,7 @@ function blankProduct(): ProductDraft {
     name: "",
     subtitle: "",
     description: "",
-    deliveryReturns: "Nairobi delivery takes 2 to 5 days. Unworn items can be returned in store within 30 days.",
+    deliveryReturns: DEMO_DELIVERY_RETURNS,
     priceKes: "",
     compareAtKes: "",
     badge: "",
@@ -276,7 +281,8 @@ function blankProduct(): ProductDraft {
     active: true,
     departments: [{ department: "new", category: "Shoes" }],
     colors: [{ name: "Black", hex: "#111111" }],
-    sizes: [{ label: "M", inStock: true }],
+    sizes: [{ label: "M" }],
+    stock: [{ colorName: "Black", sizeLabel: "M", quantity: 4 }],
     images: [{ image: "", alt: "", colorName: "Black" }],
   };
 }
@@ -295,7 +301,8 @@ type ProductDraft = {
   active: boolean;
   departments: { department: Department; category: string }[];
   colors: { name: string; hex: string }[];
-  sizes: { label: string; inStock: boolean }[];
+  sizes: { label: string }[];
+  stock: { colorName: string; sizeLabel: string; quantity: number }[];
   images: { image: string; alt: string; colorName: string }[];
 };
 
@@ -314,7 +321,8 @@ function fromProduct(product: Product): ProductDraft {
     active: product.active,
     departments: product.departments,
     colors: product.colors.map((color) => ({ name: color.name, hex: color.hex })),
-    sizes: product.sizes.map((size) => ({ label: size.label, inStock: size.inStock })),
+    sizes: product.sizes.map((size) => ({ label: size.label })),
+    stock: product.stock,
     images: product.images.map((image) => ({
       image: image.image,
       alt: image.alt,
@@ -396,6 +404,7 @@ function ProductForm({ initial, onDone }: { initial: ProductDraft; onDone: () =>
           departments: form.departments,
           colors: form.colors,
           sizes: form.sizes,
+          stock: stockCombinations(form.colors, form.sizes, form.stock),
           images: form.images.map((image) => ({ ...image, colorName: image.colorName || null })),
         });
         setMessage(savedNote(result));
@@ -455,11 +464,35 @@ function ProductForm({ initial, onDone }: { initial: ProductDraft; onDone: () =>
         {form.sizes.map((size, index) => (
           <div key={`${size.label}-${index}`} className="mt-2 flex flex-wrap items-center gap-2">
             <input className="flex-1 rounded-lg border border-line px-2 py-2 text-sm" value={size.label} onChange={(event) => patchList("sizes", index, { label: event.target.value })} />
-            <label className="text-sm"><input type="checkbox" checked={size.inStock} onChange={(event) => patchList("sizes", index, { inStock: event.target.checked })} /> In stock</label>
             <button type="button" className="text-sm underline" onClick={() => setForm({ ...form, sizes: form.sizes.filter((_, item) => item !== index) })}>Remove</button>
           </div>
         ))}
-        <button type="button" className="mt-2 text-sm underline" onClick={() => setForm({ ...form, sizes: [...form.sizes, { label: "", inStock: true }] })}>Add size</button>
+        <button type="button" className="mt-2 text-sm underline" onClick={() => setForm({ ...form, sizes: [...form.sizes, { label: "" }] })}>Add size</button>
+      </div>
+
+      <div>
+        <p className="text-sm font-medium">Stock by colour and size</p>
+        <p className="mt-1 text-xs text-muted">Available to sell for that colour and size. Checkout will not sell more than this. An unpaid checkout holds the quantity, and cancelling the order puts it back.</p>
+        {stockCombinations(form.colors, form.sizes, form.stock).map((row) => (
+          <label key={`${row.colorName}|${row.sizeLabel}`} className="mt-2 grid grid-cols-1 items-center gap-2 text-sm sm:grid-cols-[minmax(0,1fr)_6rem]">
+            <span>{[row.colorName, row.sizeLabel].filter(Boolean).join(" / ") || "Default"}</span>
+            <input
+              type="number"
+              min={0}
+              className="rounded-lg border border-line px-2 py-2"
+              value={row.quantity}
+              onChange={(event) => {
+                const quantity = Math.max(0, Math.floor(Number(event.target.value) || 0));
+                setForm((current) => {
+                  const next = stockCombinations(current.colors, current.sizes, current.stock).map((entry) =>
+                    entry.colorName === row.colorName && entry.sizeLabel === row.sizeLabel ? { ...entry, quantity } : entry,
+                  );
+                  return { ...current, stock: next };
+                });
+              }}
+            />
+          </label>
+        ))}
       </div>
 
       <div className="space-y-3">

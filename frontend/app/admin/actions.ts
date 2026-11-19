@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { ADMIN_COOKIE, safeEqual, signSession, verifySession } from "@/lib/auth";
+import { listAdminOrders, paymentReadiness } from "@/lib/admin-orders";
 import {
   addCategory,
   addHighlight,
@@ -15,6 +16,8 @@ import {
   saveSettings,
   upsertProduct,
 } from "@/lib/db/mutations";
+import { OrderError, updateOrderStatus } from "@/lib/orders";
+import { reconcilePendingPayments } from "@/lib/reconcile-run";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { categoryInputSchema, heroInputSchema, productInputSchema, settingsInputSchema } from "@/lib/validators";
 
@@ -123,4 +126,33 @@ export async function deleteProductAction(id: string) {
   await deleteProduct(id);
   refresh();
   return { ok: true as const };
+}
+
+export async function listOrdersAction() {
+  await requireAdmin();
+  return { orders: await listAdminOrders(), readiness: paymentReadiness() };
+}
+
+export async function updateOrderStatusAction(orderId: string, status: string) {
+  await requireAdmin();
+  try {
+    await updateOrderStatus(orderId, status);
+    refresh();
+    return { ok: true as const };
+  } catch (error) {
+    const message = error instanceof OrderError ? error.message : "Could not update the order";
+    return { error: message };
+  }
+}
+
+export async function reconcilePaymentsAction() {
+  await requireAdmin();
+  try {
+    const result = await reconcilePendingPayments();
+    refresh();
+    return { ok: true as const, ...result };
+  } catch (error) {
+    console.error(error);
+    return { error: "Payment check could not be completed" };
+  }
 }

@@ -7,6 +7,7 @@ import {
   productColors,
   productDepartments,
   productImages,
+  productInventory,
   productSizes,
   products,
   storeSettings,
@@ -44,7 +45,7 @@ export async function loadCatalog(activeOnly: boolean) {
   const [settingsRow] = await db.select().from(storeSettings).limit(1);
   if (!settingsRow) throw new Error("STORE_NOT_SEEDED");
 
-  const [heroRows, highlightRows, categoryRows, productRows, departmentRows, colorRows, sizeRows, imageRows] =
+  const [heroRows, highlightRows, categoryRows, productRows, departmentRows, colorRows, sizeRows, imageRows, stockRows] =
     await Promise.all([
       db.select().from(heroes),
       db.select().from(highlights).orderBy(asc(highlights.sort)),
@@ -54,6 +55,7 @@ export async function loadCatalog(activeOnly: boolean) {
       db.select().from(productColors).orderBy(asc(productColors.sort)),
       db.select().from(productSizes).orderBy(asc(productSizes.sort)),
       db.select().from(productImages).orderBy(asc(productImages.sort)),
+      db.select().from(productInventory),
     ]);
 
   const mappedProducts: Product[] = productRows.map((product) => ({
@@ -76,7 +78,17 @@ export async function loadCatalog(activeOnly: boolean) {
       .map((color) => ({ id: color.id, name: color.name, hex: color.hex, sort: color.sort })),
     sizes: sizeRows
       .filter((size) => size.productId === product.id)
-      .map((size) => ({ id: size.id, label: size.label, sort: size.sort, inStock: size.inStock })),
+      .map((size) => ({
+        id: size.id,
+        label: size.label,
+        sort: size.sort,
+        inStock: stockRows.some(
+          (row) => row.productId === product.id && row.sizeLabel === size.label && row.quantity > 0,
+        ),
+      })),
+    stock: stockRows
+      .filter((row) => row.productId === product.id)
+      .map((row) => ({ colorName: row.colorName, sizeLabel: row.sizeLabel, quantity: row.quantity })),
     images: imageRows
       .filter((image) => image.productId === product.id)
       .map((image) => ({
@@ -130,7 +142,7 @@ export async function loadCatalog(activeOnly: boolean) {
         },
       ];
     }),
-    products: activeOnly ? mappedProducts.filter((product) => product.images.some((image) => image.image.trim())) : mappedProducts,
+    products: mappedProducts,
     payments: payments(),
   };
 

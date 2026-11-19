@@ -1,5 +1,5 @@
+import { applyStripePayment, markFailed, stripeViewOf } from "@/lib/orders";
 import { getStripe } from "@/lib/stripe";
-import { getOrder, markFailed, markPaid } from "@/lib/orders";
 
 export const runtime = "nodejs";
 
@@ -12,15 +12,10 @@ export async function POST(request: Request) {
   const payload = await request.text();
   try {
     const event = getStripe().webhooks.constructEvent(payload, signature, secret);
-    if (event.type === "payment_intent.succeeded") {
+    if (event.type === "payment_intent.succeeded" || event.type === "payment_intent.canceled") {
       const intent = event.data.object;
       const orderId = intent.metadata?.orderId;
-      if (orderId) {
-        const order = await getOrder(orderId);
-        if (order && intent.amount === order.totalCents && intent.currency === "kes") {
-          await markPaid(orderId, { stripePaymentIntentId: intent.id });
-        }
-      }
+      if (orderId) await applyStripePayment(orderId, stripeViewOf(intent));
     }
     if (event.type === "payment_intent.payment_failed") {
       const intent = event.data.object;

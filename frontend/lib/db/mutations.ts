@@ -7,6 +7,7 @@ import {
   productColors,
   productDepartments,
   productImages,
+  productInventory,
   productSizes,
   products,
   storeSettings,
@@ -114,6 +115,7 @@ export async function upsertProduct(input: ProductInput) {
     if (existing) {
       await tx.delete(productImages).where(eq(productImages.productId, id));
       await tx.delete(productSizes).where(eq(productSizes.productId, id));
+      await tx.delete(productInventory).where(eq(productInventory.productId, id));
       await tx.delete(productDepartments).where(eq(productDepartments.productId, id));
       await tx.delete(productColors).where(eq(productColors.productId, id));
       await tx.update(products).set(values).where(eq(products.id, id));
@@ -133,6 +135,14 @@ export async function upsertProduct(input: ProductInput) {
         sort: index,
       });
     }
+    const quantityFor = (colorName: string, sizeLabel: string) => {
+      const row = input.stock.find(
+        (entry) =>
+          entry.colorName.trim().toLowerCase() === colorName.trim().toLowerCase() &&
+          entry.sizeLabel.trim().toLowerCase() === sizeLabel.trim().toLowerCase(),
+      );
+      return row?.quantity ?? 0;
+    };
     if (input.sizes.length > 0) {
       await tx.insert(productSizes).values(
         input.sizes.map((size, index) => ({
@@ -140,10 +150,23 @@ export async function upsertProduct(input: ProductInput) {
           productId: id,
           label: size.label,
           sort: index,
-          inStock: size.inStock,
+          inStock: input.colors.some((color) => quantityFor(color.name, size.label) > 0) || quantityFor("", size.label) > 0,
         })),
       );
     }
+    const inventoryColors = input.colors.length > 0 ? input.colors.map((color) => color.name) : [""];
+    const inventorySizes = input.sizes.length > 0 ? input.sizes.map((size) => size.label) : [""];
+    await tx.insert(productInventory).values(
+      inventoryColors.flatMap((colorName) =>
+        inventorySizes.map((sizeLabel) => ({
+          id: crypto.randomUUID(),
+          productId: id,
+          colorName,
+          sizeLabel,
+          quantity: quantityFor(colorName, sizeLabel),
+        })),
+      ),
+    );
     const departments = new Map<string, { department: string; category: string }>();
     for (const entry of input.departments) departments.set(entry.department, entry);
     await tx.insert(productDepartments).values(

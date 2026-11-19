@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { StorefrontPayload } from "@/lib/types";
+import { DEPARTMENTS, departmentLabel, type Department, type StorefrontPayload } from "@/lib/types";
 import { MediaImage } from "@/components/media-image";
 import { Catalog, HeroPanel } from "@/components/storefront/catalog";
 import { StoreProvider, useStore } from "@/components/storefront/context";
@@ -24,8 +24,13 @@ function Shell() {
   const searchRef = useRef<HTMLDivElement>(null);
   const searchButtonRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLElement>(null);
+  const logoRef = useRef<HTMLButtonElement>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const navMeasureRef = useRef<HTMLDivElement>(null);
   const announcementRef = useRef<HTMLDivElement>(null);
   const [announcementVisible, setAnnouncementVisible] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+  const slotRef = useRef<HTMLDivElement>(null);
   const [announcementHeight, setAnnouncementHeight] = useState(0);
   const [slide, setSlide] = useState(0);
   const [slideShift, setSlideShift] = useState(100);
@@ -33,6 +38,8 @@ function Shell() {
   const hero1 = store.data.heroes.find((hero) => hero.slot === "hero1");
   const hero2 = store.data.heroes.find((hero) => hero.slot === "hero2");
   const menuOpen = store.overlays.at(-1)?.type === "menu";
+  const menuHidesAnnouncement = menuOpen && isMobile;
+  const barShown = announcementVisible && !menuHidesAnnouncement;
   const { searchOpen, closeSearch } = store;
 
   useEffect(() => {
@@ -46,6 +53,42 @@ function Shell() {
     document.addEventListener("pointerdown", onPointer);
     return () => document.removeEventListener("pointerdown", onPointer);
   }, [closeSearch, searchOpen]);
+
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    const slot = slotRef.current;
+    const measure = navMeasureRef.current;
+    if (!header || !slot || !measure) return;
+
+    let shownKey = "";
+    const fit = () => {
+      const mobile = window.matchMedia("(max-width: 767px)").matches;
+      setIsMobile((current) => (current === mobile ? current : mobile));
+      const widths = new Map<Department, number>();
+      for (const node of measure.querySelectorAll<HTMLElement>("[data-department]")) {
+        const id = node.dataset.department;
+        if (id) widths.set(id as Department, node.offsetWidth);
+      }
+      const gap = 16;
+      let shown = mobile ? [] : [...DEPARTMENTS];
+      if (!mobile) {
+        while (shown.length > 0) {
+          const needed = shown.reduce((total, id) => total + (widths.get(id) ?? 0), 0) + gap * (shown.length - 1);
+          if (needed + 24 <= slot.clientWidth) break;
+          shown = shown.slice(0, -1);
+        }
+      }
+      const next = shown.join();
+      if (next === shownKey) return;
+      shownKey = next;
+      store.setNavDepartments(shown);
+    };
+
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
 
   const messages = store.data.settings.announcement
     .split(/\n+/)
@@ -106,7 +149,7 @@ function Shell() {
     let running = true;
     const place = () => {
       const navBottom = header?.getBoundingClientRect().bottom ?? 64;
-      const announced = showAnnouncement && announcementVisible && bar ? bar.getBoundingClientRect().bottom : navBottom;
+      const announced = showAnnouncement && barShown && bar ? bar.getBoundingClientRect().bottom : navBottom;
       document.documentElement.style.setProperty("--nn-sheet-top", `${Math.max(navBottom, announced)}px`);
     };
     const tick = () => {
@@ -128,7 +171,7 @@ function Shell() {
       bar?.removeEventListener("transitionend", stop);
       window.clearTimeout(timeout);
     };
-  }, [announcementHeight, announcementVisible, showAnnouncement]);
+  }, [announcementHeight, barShown, showAnnouncement]);
 
   useEffect(() => {
     const positions = new WeakMap<EventTarget, number>();
@@ -181,11 +224,36 @@ function Shell() {
   return (
     <div className="min-h-screen bg-white">
       <h1 className="sr-only">{store.data.settings.companyName}</h1>
-      <header ref={headerRef} className="fixed inset-x-0 top-0 z-50 flex h-16 items-center justify-between bg-white px-4">
-        <button type="button" aria-label={store.data.settings.companyName} onClick={store.goHome}>
+      <header ref={headerRef} className="fixed inset-x-0 top-0 z-50 grid h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center bg-white px-4">
+        <button ref={logoRef} type="button" aria-label={store.data.settings.companyName} onClick={store.goHome} className="relative z-10">
           <MediaImage src={store.data.settings.logo} alt="" className="h-6 w-auto" />
         </button>
-        <div className="flex items-center gap-2">
+        <div ref={slotRef} className="flex min-w-0 items-center justify-center">
+          <div ref={navMeasureRef} className="pointer-events-none absolute -left-[9999px] flex gap-4" aria-hidden="true">
+            {DEPARTMENTS.map((department) => (
+              <span key={department} data-department={department} className="border-b-2 border-transparent px-1 text-sm">
+                {departmentLabel(department)}
+              </span>
+            ))}
+          </div>
+          <nav className={`items-center justify-center gap-4 ${store.navDepartments.length > 0 ? "hidden md:flex" : "hidden"}`}>
+            {store.navDepartments.map((department) => (
+              <button
+                key={department}
+                type="button"
+                aria-current={store.department === department ? "true" : undefined}
+                onClick={() => {
+                  setAnnouncementVisible(false);
+                  store.chooseDepartment(department);
+                }}
+                className={`border-b-2 px-1 text-sm ${store.department === department ? "border-ink" : "border-transparent"}`}
+              >
+                {departmentLabel(department)}
+              </button>
+            ))}
+          </nav>
+        </div>
+        <div ref={actionsRef} className="relative z-10 flex items-center gap-2">
           <button ref={searchButtonRef} type="button" aria-label="Search" onClick={store.toggleSearch} className="p-1">
             <IconSearch />
           </button>
@@ -231,7 +299,7 @@ function Shell() {
           <div aria-hidden="true" style={{ height: announcementHeight }} />
           <div
             ref={announcementRef}
-            className={`fixed inset-x-0 top-16 z-[45] overflow-hidden border-b border-line bg-[#f5f5f5] px-6 py-3 text-center font-[Helvetica_Neue,Helvetica,Arial,sans-serif] text-[13px] font-bold leading-5 text-ink transition-transform duration-300 ease-out ${announcementVisible ? "translate-y-0" : "-translate-y-full pointer-events-none"}`}
+            className={`fixed inset-x-0 top-16 overflow-hidden border-b border-line bg-[#f5f5f5] px-6 py-3 text-center font-[Helvetica_Neue,Helvetica,Arial,sans-serif] text-[13px] font-bold leading-5 text-ink transition-transform duration-300 ease-out ${menuHidesAnnouncement ? "z-[35]" : "z-[45]"} ${barShown ? "translate-y-0" : "-translate-y-full pointer-events-none"}`}
           >
             <p
               className="mx-auto min-h-10   w-full max-w-3xl text-center"

@@ -1,9 +1,9 @@
 import { config } from "dotenv";
+import { DEMO_DELIVERY_RETURNS } from "../policy";
 
 config({ path: ".env.local" });
 
-const RETURNS =
-  "Nairobi delivery takes 2 to 5 days. Pickup orders are held for 5 days at the store. Unworn items can be returned in store within 30 days with your order number.";
+const RETURNS = DEMO_DELIVERY_RETURNS;
 
 async function main() {
   const { db } = await import("./index");
@@ -21,7 +21,7 @@ async function main() {
     companyName: "Nike Nairobi",
     logo: "/nike_logo.jpg",
     announcement:
-      "Free delivery on orders of KES 15,000 or more. Otherwise Nairobi delivery is KES 450.",
+      "Demonstration catalog. Delivery fees are calculated at checkout.\nPickup shows no delivery fee. Timing is confirmed only after payment.",
     pickupAddress: "Nike Nairobi, Westlands, Waiyaki Way, Nairobi",
     deliveryFeeCents: 45000,
     freeDeliveryThresholdCents: 1_500_000,
@@ -349,6 +349,17 @@ async function main() {
         sort: index,
         inStock: size.inStock !== false,
       })),
+    );
+    await db.insert(schema.productInventory).values(
+      product.colors.flatMap((color) =>
+        product.sizes.map((size) => ({
+          id: crypto.randomUUID(),
+          productId: product.id,
+          colorName: color.name,
+          sizeLabel: size.label,
+          quantity: size.inStock === false ? 0 : 4,
+        })),
+      ),
     );
     await db.insert(schema.productImages).values(
       product.images.map((image, index) => ({

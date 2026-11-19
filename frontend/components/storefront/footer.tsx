@@ -18,46 +18,40 @@ function Row({ title, children }: { title: string; children: React.ReactNode }) 
 
 export function Footer({ settings, flush = false }: { settings: StoreSettings; flush?: boolean }) {
   const year = new Date().getFullYear();
+  const fee = formatKes(settings.deliveryFeeCents);
+  const threshold = formatKes(settings.freeDeliveryThresholdCents);
   return (
     <footer className={`${flush ? "mt-0" : "mt-8"} border-t border-line px-5 pb-16`}>
       <Row title="Company">
-        <p>{settings.companyName} is a Nike store serving in Nairobi.</p>
-        <p>Pickup: {settings.pickupAddress}</p>
+        <p>{settings.companyName} is a demonstration storefront for a Nike shop in Nairobi. It is not the official Nike website.</p>
+        <p>Pickup address shown at checkout: {settings.pickupAddress}</p>
       </Row>
       <Row title="Delivery and returns">
-        <p>
-          Delivery is {formatKes(settings.deliveryFeeCents)}. Orders of {formatKes(settings.freeDeliveryThresholdCents)} or more
-          ship free. Pickup at the store is free.
-        </p>
-        <p>Same day delivery in Nairobi when order is placed before 3pm.</p> 
-        <p>Next day delivery in Nairobi for orders placed after 3pm.</p> 
-        <p>Delivery takes 1 to 3 days outside Nairobi.</p> 
-        <p>Unworn items can be returned in store within 30 days with the order number.</p>
+        <p>The delivery fee at checkout is {fee}. An order of {threshold} or more shows a delivery fee of zero. Pickup shows no delivery fee.</p>
+        <p>This demonstration does not promise a delivery day or a pickup time. Any timing would be confirmed by the shop only after a payment is recorded.</p>
+        <p>An unworn item may be brought back to the store within 30 days with the order number. The shop decides whether to accept the return.</p>
       </Row>
-      {/* <Row title="Kenya">
-        <p>Shopping from Nairobi, Kenya. Prices are shown in Kenyan shillings and include VAT.</p>
-      </Row> */}
-
       <Row title="Guides">
-        <p>From locked-in compression layers to relaxed streetwear fleece, every piece is engineered with a specific silhouette in mind. Order your true UK size for standard and tailored fits, size down on oversized styles for a cleaner drape, and check your chest, waist, hips, and inseam measurements before checkout to dial in your exact match.</p>
-        <p>Explore curated gear built for your pace. Shop by activity, browse the latest seasonal drops, or see how pieces move on-model with full fit notes on every product page. Missed out on a limited release? Turn on back-in-stock alerts for your size and watch our launch countdowns so you never miss the next drop.</p>
+        <p>Choose the size you usually wear. A size and colour with none left cannot be added to the bag.</p>
+        <p>This demonstration does not include back-in-stock alerts, launch countdowns, or early access.</p>
       </Row>
       <Row title="Terms of Use">
-        <p>Use this online store to browse and buy goods for personal use. Do not misuse the checkout or attempt to place fraudulent orders.</p>
+        <p>Use this demonstration to browse and to place a personal order. Do not misuse checkout, and do not place an order you do not intend to pay.</p>
       </Row>
       <Row title="Terms of Sale">
         <p>
-          A contract starts when payment is confirmed. Prices are in KES. {settings.companyName} may cancel an order that cannot be fulfilled
-          and will not capture payment for items it cannot send.
+          Prices are in Kenyan shillings. An order counts as paid only after M-Pesa or the card payment is confirmed. {settings.companyName} may
+          cancel an order it cannot fulfil. Delivery, pickup, and returns follow the notes above.
         </p>
       </Row>
       <Row title="Privacy">
         <p>
-          We collect your name, email address, phone number, and delivery details solely to process and fulfill your order. For your security, we do not store yoyr payment details on our servers. Card transactions are securely processed by stripe and M-pesa payments are confirmed directly through Safaricom.
+          Name, email, phone, and delivery details are used to fulfil an order. An email added to the list stays until you unsubscribe. Card
+          numbers are handled by Stripe. M-Pesa is confirmed by Safaricom. This site does not store card numbers.
         </p>
       </Row>
       <p className="border-t border-line py-4 text-sm text-muted">
-        © {year} {settings.companyName}. All rights reserved.
+        © {year} {settings.companyName}. Demonstration storefront.
       </p>
     </footer>
   );

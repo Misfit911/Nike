@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { deliveryFeeFor, formatKes } from "@/lib/money";
+import { variantQuantity } from "@/lib/stock";
 import { normalizeKePhone } from "@/lib/phone";
 import type { OrderReceipt } from "@/lib/types";
 import { MediaImage } from "@/components/media-image";
@@ -42,12 +43,19 @@ export function CheckoutSheet() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [cardSession, setCardSession] = useState<{ orderId: string; clientSecret: string; email: string } | null>(null);
+  const cardSessionRef = useRef(cardSession);
+  const paidRef = useRef(false);
+  cardSessionRef.current = cardSession;
 
   const lines = bag.map((line) => ({
     line,
     product: data.products.find((product) => product.id === line.productId) ?? null,
   }));
   const unavailable = lines.some((entry) => !entry.product);
+  const stockShort = lines.find(
+    (entry) => entry.product && entry.line.quantity > variantQuantity(entry.product.stock, entry.line.color, entry.line.size),
+  );
+  const oversold = Boolean(stockShort);
   const subtotal = lines.reduce((sum, entry) => sum + (entry.product ? entry.product.priceCents * entry.line.quantity : 0), 0);
   const delivery = deliveryFeeFor(subtotal, fulfillment, data.settings);
   const total = subtotal + delivery;
@@ -79,7 +87,7 @@ export function CheckoutSheet() {
   const signature = JSON.stringify(payload);
 
   useEffect(() => {
-    if (method !== "card" || !paymentOpen || !data.payments.stripe || unavailable) return;
+    if (method !== "card" || !paymentOpen || !data.payments.stripe || unavailable || oversold) return;
     const controller = new AbortController();
     let alive = true;
     setCardSession(null);
@@ -116,10 +124,19 @@ export function CheckoutSheet() {
       alive = false;
       controller.abort();
       window.clearTimeout(timer);
+      const session = cardSessionRef.current;
+      if (!session || paidRef.current) return;
+      cardSessionRef.current = null;
+      void fetch("/api/checkout/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: session.orderId, email: session.email }),
+      });
     };
-  }, [data.payments.stripe, method, payload, paymentOpen, signature, unavailable]);
+  }, [data.payments.stripe, method, oversold, payload, paymentOpen, signature, unavailable]);
 
   function finish(receipt: OrderReceipt) {
+    paidRef.current = true;
     clearBag();
     rememberOrder({ orderId: receipt.orderId, orderNumber: receipt.orderNumber, email: receipt.email });
     showSuccess(receipt);
@@ -143,6 +160,7 @@ export function CheckoutSheet() {
   }
 
   async function payMpesa() {
+    if (oversold) return;
     if (!normalizeKePhone(mpesaPhone)) {
       setError("Enter the Safaricom number that should receive the prompt");
       return;
@@ -297,7 +315,7 @@ export function CheckoutSheet() {
           <div className="mt-3 grid gap-3">
             <button
               type="button"
-              disabled={!data.payments.stripe || unavailable}
+              disabled={!data.payments.stripe || unavailable || oversold}
               onClick={() => {
                 setMethod("card");
                 setError(null);
@@ -309,7 +327,7 @@ export function CheckoutSheet() {
             </button>
             <button
               type="button"
-              disabled={!data.payments.mpesa || unavailable}
+              disabled={!data.payments.mpesa || unavailable || oversold}
               onClick={() => {
                 void cancelCard();
                 setMethod("mpesa");
@@ -347,11 +365,16 @@ export function CheckoutSheet() {
             <div className="mt-5">
               <Field label="M-Pesa phone" value={mpesaPhone} onChange={setMpesaPhone} type="tel" />
               <p className="mt-2 text-xs text-muted">A Safaricom prompt will ask for your M-Pesa PIN. The bag stays until the payment is confirmed.</p>
-              <Review subtotal={subtotal} delivery={delivery} total={total} busy={busy} label="Buy with M-Pesa" onBuy={() => void payMpesa()} />
+              <Review subtotal={subtotal} delivery={delivery} total={total} busy={busy || oversold} label="Buy with M-Pesa" onBuy={() => void payMpesa()} />
             </div>
           ) : null}
           {error ? <p className="mt-4 text-sm text-sale">{error}</p> : null}
           {unavailable ? <p className="mt-4 text-sm text-sale">Remove unavailable items from your bag before paying.</p> : null}
+          {stockShort?.product ? (
+            <p className="mt-4 text-sm text-sale">
+              {stockShort.product.name} has {variantQuantity(stockShort.product.stock, stockShort.line.color, stockShort.line.size)} available in that size and colour. Lower the quantity before paying.
+            </p>
+          ) : null}
         </section>
       ) : null}
       <div className="px-5 pb-6 text-center">

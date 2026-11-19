@@ -1,9 +1,12 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/index";
 import { orderItems, orders, products, productColors, productImages, productSizes, storeSettings } from "@/lib/db/schema";
+import { releaseStock, takeStock } from "@/lib/inventory";
 import { deliveryFeeFor, shillingsFromCents } from "@/lib/money";
 import { mpesaOutcome, stkQuery } from "@/lib/mpesa";
+import { nextStatuses } from "@/lib/order-status";
 import { normalizeKePhone } from "@/lib/phone";
+import { decideMpesa, decideStripe, type StripeView } from "@/lib/reconcile";
 import { getStripe } from "@/lib/stripe";
 import type { CheckoutInput } from "@/lib/validators";
 import type { OrderReceipt } from "@/lib/types";
@@ -40,7 +43,6 @@ export async function priceCheckout(input: CheckoutInput) {
     if (sizes.length > 0) {
       const size = sizes.find((entry) => entry.label === item.size);
       if (!size) throw new OrderError(`Choose a size for ${product.name}`);
-      if (!size.inStock) throw new OrderError(`${product.name} in size ${size.label} is sold out`);
     }
     if (colors.length > 0 && !colors.some((entry) => entry.name === item.color)) {
       throw new OrderError(`Choose a colour for ${product.name}`);
@@ -76,6 +78,17 @@ export async function createPendingOrder(input: CheckoutInput, paymentMethod: "c
   const id = crypto.randomUUID();
   const number = orderNumber();
   await db.transaction(async (tx) => {
+    const reserved = await takeStock(
+      tx,
+      priced.lines.map((line) => ({
+        productId: line.productId,
+        name: line.name,
+        color: line.color,
+        size: line.size,
+        quantity: line.quantity,
+      })),
+    );
+    if (!reserved.ok) throw new OrderError(reserved.message);
     await tx.insert(orders).values({
       id,
       orderNumber: number,
@@ -92,6 +105,7 @@ export async function createPendingOrder(input: CheckoutInput, paymentMethod: "c
       subtotalCents: priced.subtotalCents,
       deliveryFeeCents: priced.deliveryFeeCents,
       totalCents: priced.totalCents,
+      inventoryHeld: true,
     });
     await tx.insert(orderItems).values(
       priced.lines.map((line) => ({
@@ -189,54 +203,125 @@ export async function markPaid(orderId: string, extra: { mpesaReceipt?: string |
 }
 
 export async function markFailed(orderId: string, detail: string) {
-  await db
-    .update(orders)
-    .set({ status: "failed", statusDetail: detail.slice(0, 300) })
-    .where(and(eq(orders.id, orderId), eq(orders.status, "pending")));
+  await db.transaction(async (tx) => {
+    const [current] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
+    if (!current || current.status !== "pending") return;
+    if (current.inventoryHeld) {
+      const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+      await releaseStock(tx, items);
+    }
+    await tx
+      .update(orders)
+      .set({ status: "failed", statusDetail: detail.slice(0, 300), inventoryHeld: false })
+      .where(eq(orders.id, orderId));
+  });
 }
 
 export async function cancelPending(orderId: string, email: string) {
   const order = await getOrder(orderId);
   if (!order || !emailMatches(order.email, email)) throw new OrderError("Order not found", 404);
   if (order.status !== "pending") return order;
-  await db.update(orders).set({ status: "cancelled", statusDetail: "Replaced before payment" }).where(eq(orders.id, orderId));
+  await db.transaction(async (tx) => {
+    const [current] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
+    if (!current || current.status !== "pending") return;
+    if (current.inventoryHeld) {
+      const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+      await releaseStock(tx, items);
+    }
+    await tx
+      .update(orders)
+      .set({ status: "cancelled", statusDetail: "Replaced before payment", inventoryHeld: false })
+      .where(eq(orders.id, orderId));
+  });
   return getOrder(orderId);
+}
+
+async function notePending(orderId: string, detail: string) {
+  await db
+    .update(orders)
+    .set({ statusDetail: detail.slice(0, 300) })
+    .where(and(eq(orders.id, orderId), eq(orders.status, "pending")));
+}
+
+export function stripeViewOf(intent: {
+  id: string;
+  status: string;
+  amount: number;
+  currency: string;
+  metadata?: { orderId?: string } | null;
+}): StripeView {
+  return {
+    id: intent.id,
+    status: intent.status,
+    amount: intent.amount,
+    currency: intent.currency,
+    metadataOrderId: intent.metadata?.orderId ?? null,
+  };
+}
+
+export async function applyStripePayment(orderId: string, intent: StripeView) {
+  const order = await getOrder(orderId);
+  if (!order) return { action: "skip" as const, detail: "Order not found", orderNumber: "" };
+  const decision = decideStripe({ id: order.id, totalCents: order.totalCents, status: order.status }, intent);
+  if (decision.action === "mark_paid") await markPaid(order.id, { stripePaymentIntentId: intent.id });
+  else if (decision.action === "mark_failed") await markFailed(order.id, decision.detail);
+  else if (decision.action === "mismatch" || decision.action === "pending") await notePending(order.id, decision.detail);
+  return { ...decision, orderNumber: order.orderNumber };
+}
+
+export async function applyMpesaPayment(orderId: string, outcome: { state: "paid" | "failed" | "pending"; description: string }) {
+  const order = await getOrder(orderId);
+  if (!order) return { action: "skip" as const, detail: "Order not found", orderNumber: "" };
+  const decision = decideMpesa(order.status, outcome);
+  if (decision.action === "mark_paid") await markPaid(order.id, { mpesaReceipt: order.mpesaReceipt });
+  else if (decision.action === "mark_failed") await markFailed(order.id, decision.detail);
+  else if (decision.action === "pending" && outcome.description) await notePending(order.id, decision.detail);
+  return { ...decision, orderNumber: order.orderNumber };
 }
 
 export async function confirmStripeOrder(orderId: string) {
   const order = await getOrder(orderId);
   if (!order || !order.stripePaymentIntentId) throw new OrderError("Order not found", 404);
-  if (order.status === "paid") return order;
+  if (order.status !== "pending") return order;
   const stripe = getStripe();
   const intent = await stripe.paymentIntents.retrieve(order.stripePaymentIntentId);
-  if (intent.metadata.orderId !== order.id || intent.amount !== order.totalCents || intent.currency !== "kes") {
-    throw new OrderError("Payment does not match this order", 409);
-  }
-  if (intent.status === "succeeded") {
-    await markPaid(order.id, { stripePaymentIntentId: intent.id });
-  } else if (intent.status === "canceled") {
-    await markFailed(order.id, "Card payment was cancelled");
-  }
+  await applyStripePayment(order.id, stripeViewOf(intent));
   return getOrder(order.id);
 }
 
 export async function syncMpesaOrder(orderId: string) {
   const order = await getOrder(orderId);
   if (!order) throw new OrderError("Order not found", 404);
-  if (order.status === "paid" || !order.mpesaCheckoutRequestId) return order;
+  if (order.status !== "pending" || !order.mpesaCheckoutRequestId) return order;
   try {
     const result = await stkQuery(order.mpesaCheckoutRequestId);
-    const outcome = mpesaOutcome(result);
-    if (outcome.state === "paid") {
-      const fresh = await getOrder(order.id);
-      await markPaid(order.id, { mpesaReceipt: fresh?.mpesaReceipt ?? null });
-    } else if (outcome.state === "failed") {
-      await markFailed(order.id, outcome.description);
-    }
+    await applyMpesaPayment(order.id, mpesaOutcome(result));
   } catch (error) {
     console.error("M-Pesa status check failed", error);
   }
   return getOrder(order.id);
+}
+
+export async function updateOrderStatus(orderId: string, next: string) {
+  await db.transaction(async (tx) => {
+    const [current] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
+    if (!current) throw new OrderError("Order not found", 404);
+    if (!nextStatuses(current.status, current.fulfillment).includes(next)) {
+      throw new OrderError("That status change is not available");
+    }
+    if (next === "cancelled" && current.inventoryHeld) {
+      const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+      await releaseStock(tx, items);
+    }
+    await tx
+      .update(orders)
+      .set({
+        status: next,
+        statusDetail: null,
+        inventoryHeld: next === "cancelled" ? false : current.inventoryHeld,
+      })
+      .where(eq(orders.id, orderId));
+  });
 }
 
 export function mpesaAmount(totalCents: number) {

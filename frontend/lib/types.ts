@@ -30,6 +30,7 @@ export type Highlight = { id: string; image: string; sort: number };
 export type Category = { id: string; name: string; department: Department; sort: number };
 export type ProductColor = { id: string; name: string; hex: string; sort: number };
 export type ProductSize = { id: string; label: string; sort: number; inStock: boolean };
+export type ProductStock = { colorName: string; sizeLabel: string; quantity: number };
 export type ProductImage = { id: string; image: string; alt: string; colorId: string | null; sort: number };
 export type ProductDepartment = { department: Department; category: string };
 
@@ -48,6 +49,7 @@ export type Product = {
   departments: ProductDepartment[];
   colors: ProductColor[];
   sizes: ProductSize[];
+  stock: ProductStock[];
   images: ProductImage[];
 };
 

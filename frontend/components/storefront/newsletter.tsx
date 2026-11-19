@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 
 export function Newsletter() {
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "saving" | "done">("idle");
+  const [status, setStatus] = useState<"idle" | "saving" | "done" | "removing" | "removed">("idle");
   const [error, setError] = useState<string | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -25,12 +25,41 @@ export function Newsletter() {
     setStatus("done");
   }
 
+  async function unsubscribe() {
+    setError(null);
+    setStatus("removing");
+    const response = await fetch("/api/newsletter/unsubscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const body = (await response.json()) as { error?: string };
+    if (!response.ok) {
+      setStatus("done");
+      setError(body.error || "Could not unsubscribe that email");
+      return;
+    }
+    setStatus("removed");
+  }
+
   return (
     <section className="bg-[#0c1411] px-6 py-25 text-center text-white" style={{margin: "25px 0 25px"}}>
       <h2 className="text-4xl font-black leading-[0.95] tracking-tight md:text-6xl">Become a Nike Member</h2>
       <p className="mt-4 text-base text-white/90">Get the latest products from Nike, plus access to exclusive sales and events.</p>
-      {status === "done" ? (
-        <p className="mt-8 text-sm tracking-wide">You&apos;re on the list.</p>
+      {status === "done" || status === "removing" ? (
+        <div className="mt-8">
+          <p className="text-sm tracking-wide">You&apos;re on the list.</p>
+          <button
+            type="button"
+            onClick={() => void unsubscribe()}
+            disabled={status === "removing"}
+            className="mt-4 text-sm font-normal text-white underline decoration-white underline-offset-4 disabled:opacity-60"
+          >
+            {status === "removing" ? "Unsubscribing" : "Unsubscribe"}
+          </button>
+        </div>
+      ) : status === "removed" ? (
+        <p className="mt-8 text-sm tracking-wide">You have been unsubscribed.</p>
       ) : (
         <form onSubmit={(event) => void submit(event)} className="mx-auto mt-8 flex w-full max-w-xl flex-col gap-3 sm:flex-row">
           <label className="min-w-0 flex-1 text-left">

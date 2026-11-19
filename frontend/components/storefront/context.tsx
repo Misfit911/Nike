@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { selectionQuantity, variantQuantity } from "@/lib/stock";
 import type { BagLine, Department, FilterState, Gender, KidsChoice, KnownOrder, OrderReceipt, PriceBand, StorefrontPayload } from "@/lib/types";
 import { emptyFilters } from "@/lib/types";
 
@@ -55,6 +56,8 @@ type StoreValue = {
   showSuccess: (receipt: OrderReceipt) => void;
   goHome: () => void;
   scrollToCatalog: () => void;
+  navDepartments: Department[];
+  setNavDepartments: (departments: Department[]) => void;
 };
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -77,6 +80,7 @@ export function StoreProvider({ data, children }: { data: StorefrontPayload; chi
   const [favourites, setFavourites] = useState<string[]>([]);
   const [knownOrders, setKnownOrders] = useState<KnownOrder[]>([]);
   const [overlays, setOverlays] = useState<Overlay[]>([]);
+  const [navDepartments, setNavDepartments] = useState<Department[]>([]);
   const [ready, setReady] = useState(false);
   const pushedRef = useRef(0);
   const suppressPopRef = useRef(0);
@@ -209,18 +213,31 @@ export function StoreProvider({ data, children }: { data: StorefrontPayload; chi
       bag,
       bagCount: bag.reduce((sum, line) => sum + line.quantity, 0),
       addToBag: ({ productId, size, color }) => {
+        const product = data.products.find((item) => item.id === productId);
+        const available = product ? selectionQuantity(product, color, size) : 0;
+        if (available == null || available < 1) return;
         const key = `${productId}|${size ?? ""}|${color ?? ""}`;
+        const existing = bag.find((line) => line.key === key);
+        const nextQuantity = Math.min(10, available, (existing?.quantity ?? 0) + 1);
+        if (existing && nextQuantity <= existing.quantity) return;
         setBag((current) => {
-          const existing = current.find((line) => line.key === key);
-          if (!existing) return [...current, { key, productId, size, color, quantity: 1 }];
-          return current.map((line) => (line.key === key ? { ...line, quantity: Math.min(10, line.quantity + 1) } : line));
+          const line = current.find((item) => item.key === key);
+          if (!line) return [...current, { key, productId, size, color, quantity: 1 }];
+          return current.map((item) => (item.key === key ? { ...item, quantity: Math.min(nextQuantity, item.quantity + 1) } : item));
         });
         openOverlay({ type: "added", productId, size, color });
       },
       setQty: (key, quantity) => {
-        setBag((current) =>
-          quantity <= 0 ? current.filter((line) => line.key !== key) : current.map((line) => (line.key === key ? { ...line, quantity } : line)),
-        );
+        setBag((current) => {
+          const line = current.find((item) => item.key === key);
+          if (!line) return current;
+          if (quantity <= 0) return current.filter((item) => item.key !== key);
+          const product = data.products.find((item) => item.id === line.productId);
+          const available = product ? variantQuantity(product.stock, line.color, line.size) : quantity;
+          const next = Math.min(quantity, 10, Math.max(available, 0));
+          if (next <= 0) return current.filter((item) => item.key !== key);
+          return current.map((item) => (item.key === key ? { ...item, quantity: next } : item));
+        });
       },
       removeLine: (key) => setBag((current) => current.filter((line) => line.key !== key)),
       clearBag: () => setBag([]),
@@ -258,8 +275,10 @@ export function StoreProvider({ data, children }: { data: StorefrontPayload; chi
         window.setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 0);
       },
       scrollToCatalog,
+      navDepartments,
+      setNavDepartments,
     };
-  }, [bag, data, department, favourites, filters, knownOrders, online, overlays, searchOpen, searchQuery]);
+  }, [bag, data, department, favourites, filters, knownOrders, navDepartments, online, overlays, searchOpen, searchQuery]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
