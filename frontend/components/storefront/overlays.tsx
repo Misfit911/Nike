@@ -2,12 +2,10 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { AnimatePresence } from "framer-motion";
-import { filterOptions, PRICE_LABELS } from "@/lib/catalog";
+import { filterOptions, onSale, PRICE_LABELS } from "@/lib/catalog";
 import { deliveryFeeFor, formatKes } from "@/lib/money";
 import { orderStatusLabel } from "@/lib/order-status";
 import { bagDeliveryNote } from "@/lib/policy";
-import { unitPriceCents } from "@/lib/pricing";
-import { sortSizes } from "@/lib/sizes";
 import { selectionQuantity, variantQuantity } from "@/lib/stock";
 import { departmentLabel, DEPARTMENTS, type OrderReceipt, type Product } from "@/lib/types";
 import { MediaImage } from "@/components/media-image";
@@ -15,7 +13,6 @@ import { CheckoutSheet } from "@/components/storefront/checkout";
 import { useStore, type Overlay } from "@/components/storefront/context";
 import { Footer } from "@/components/storefront/footer";
 import { IconChevron, IconHeart } from "@/components/storefront/icons";
-import { ProductPrice } from "@/components/storefront/price";
 import { BackLink, Sheet } from "@/components/storefront/sheet";
 
 export function Overlays() {
@@ -205,7 +202,10 @@ function ProductSheet({ productId }: { productId: string }) {
         <BackLink onClick={store.back} />
         <h2 className="mt-4 text-2xl font-medium">{product.name}</h2>
         <p className="text-muted">{product.subtitle}</p>
-        <ProductPrice product={product} member={Boolean(store.member)} tone="sheet" />
+        <p className="mt-2 text-lg">{formatKes(product.priceCents)}</p>
+        {onSale(product) && product.compareAtPriceCents ? (
+          <p className="text-sm text-muted line-through">{formatKes(product.compareAtPriceCents)}</p>
+        ) : null}
         {product.badge === "Highly Rated" ? (
           <p className="mt-3 inline-flex rounded-full border border-line px-3 py-1 text-sm">Highly Rated</p>
         ) : null}
@@ -257,7 +257,7 @@ function ProductSheet({ productId }: { productId: string }) {
         <div className="px-5 pt-5">
           <p className="text-base font-medium">Select Size</p>
           <div className="mt-3 grid grid-cols-2 gap-2">
-            {sortSizes(product.sizes).map((entry) => {
+            {product.sizes.map((entry) => {
               const available = variantQuantity(product.stock, color, entry.label);
               return (
               <button
@@ -269,10 +269,9 @@ function ProductSheet({ productId }: { productId: string }) {
                   setSizeError(false);
                   setStockError(null);
                 }}
-                className={`rounded-md border px-2 py-3 text-sm ${size === entry.label ? "border-ink bg-ink text-white" : "border-line"} disabled:text-muted disabled:line-through`}
+                className={`rounded-md border py-3 text-sm ${size === entry.label ? "border-ink bg-ink text-white" : "border-line"} disabled:text-muted disabled:line-through`}
               >
-                <span className="block">{available < 1 ? `${entry.label} · Sold out` : entry.label}</span>
-                {available >= 1 && available <= 3 ? <span className="mt-1 block text-xs font-medium text-sale">{available} left</span> : null}
+                {available < 1 ? `${entry.label} · Sold out` : entry.label}
               </button>
               );
             })}
@@ -325,10 +324,9 @@ function AddedSheet({ productId, size, color }: { productId: string; size: strin
 
 function BagSheet() {
   const store = useStore();
-  const signedIn = Boolean(store.member);
   const subtotal = store.bag.reduce((sum, line) => {
     const product = store.data.products.find((item) => item.id === line.productId);
-    return sum + (product ? unitPriceCents(product, signedIn) * line.quantity : 0);
+    return sum + (product ? product.priceCents * line.quantity : 0);
   }, 0);
   const delivery = deliveryFeeFor(subtotal, "delivery", store.data.settings);
   return (
@@ -363,7 +361,7 @@ function BagSheet() {
                     {product?.images[0] ? <MediaImage src={product.images[0].image} alt="" className="h-full w-full object-cover" /> : null}
                   </div>
                   <div className="min-w-0 flex-1 text-sm">
-                    {product ? <ProductPrice product={product} member={signedIn} /> : <p className="font-medium">Unavailable</p>}
+                    <p className="font-medium">{product ? formatKes(product.priceCents) : "Unavailable"}</p>
                     <p className="mt-1">{product?.name ?? "This item is no longer sold"}</p>
                     <p className="text-muted">{product?.subtitle}</p>
                     <p className="text-muted">{[line.color, line.size].filter(Boolean).join(" · ")}</p>
@@ -435,12 +433,10 @@ function OrdersSheet() {
   const [error, setError] = useState<string | null>(null);
   const [found, setFound] = useState<OrderReceipt | null>(null);
   const [saved, setSaved] = useState<OrderReceipt[]>([]);
-  const foundRef = useRef(found);
-  foundRef.current = found;
 
   useEffect(() => {
     let cancelled = false;
-    async function load() {
+    void (async () => {
       const receipts: OrderReceipt[] = [];
       for (const order of knownOrders) {
         const response = await fetch("/api/orders/lookup", {
@@ -451,22 +447,11 @@ function OrdersSheet() {
         if (response.ok) receipts.push((await response.json()) as OrderReceipt);
       }
       if (!cancelled) setSaved(receipts);
-      const current = foundRef.current;
-      if (!current) return;
-      const response = await fetch("/api/orders/lookup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNumber: current.orderNumber, email: current.email }),
-      });
-      if (response.ok && !cancelled) setFound((await response.json()) as OrderReceipt);
-    }
-    void load();
-    const timer = window.setInterval(() => void load(), 10_000);
+    })();
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
     };
-  }, [found?.email, found?.orderNumber, knownOrders]);
+  }, [knownOrders]);
 
   async function lookup() {
     setError(null);
@@ -527,7 +512,7 @@ function ReceiptSummary({ receipt }: { receipt: OrderReceipt }) {
 }
 
 function FavouritesSheet() {
-  const { data, favourites, back, push, member } = useStore();
+  const { data, favourites, back, push } = useStore();
   const products = favourites
     .map((id) => data.products.find((product) => product.id === id))
     .filter((product): product is Product => Boolean(product));
@@ -543,7 +528,7 @@ function FavouritesSheet() {
               {product.images[0] ? <MediaImage src={product.images[0].image} alt="" className="h-full w-full object-cover" /> : null}
             </div>
             <p className="mt-2 text-sm font-medium">{product.name}</p>
-            <ProductPrice product={product} member={Boolean(member)} />
+            <p className="text-sm">{formatKes(product.priceCents)}</p>
           </button>
         ))}
       </div>
@@ -562,7 +547,7 @@ function Check({ checked, label, onChange }: { checked: boolean; label: string; 
 
 function FiltersSheet() {
   const store = useStore();
-  const options = filterOptions(store.data.products, store.department, store.filters.category, Boolean(store.member));
+  const options = filterOptions(store.data.products, store.department, store.filters.category);
   return (
     <div className="px-5 py-5">
       <BackLink onClick={store.back} />
@@ -577,7 +562,7 @@ function FiltersSheet() {
 
 function FilterChipSheet({ chip }: { chip: "gender" | "kids" | "price" | "sale" | "size" | "color" }) {
   const store = useStore();
-  const options = filterOptions(store.data.products, store.department, store.filters.category, Boolean(store.member));
+  const options = filterOptions(store.data.products, store.department, store.filters.category);
   const titles = { gender: "Gender", kids: "Kids", price: "Shop By Price", sale: "Sale & Offers", size: "Size", color: "Colour" };
   return (
     <div className="px-5 py-5">

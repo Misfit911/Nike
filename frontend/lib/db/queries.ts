@@ -66,7 +66,6 @@ export async function loadCatalog(activeOnly: boolean) {
     deliveryReturns: product.deliveryReturns,
     priceCents: product.priceCents,
     compareAtPriceCents: product.compareAtPriceCents,
-    membersOnly: product.membersOnly,
     badge: product.badge,
     gender: asGender(product.gender),
     kids: product.kids,

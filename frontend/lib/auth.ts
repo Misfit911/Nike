@@ -1,9 +1,7 @@
 const encoder = new TextEncoder();
 
 export const ADMIN_COOKIE = "nn_admin";
-export const MEMBER_COOKIE = "nn_member";
 const SESSION_MS = 12 * 60 * 60 * 1000;
-const MEMBER_SESSION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function safeEqual(a: string, b: string) {
   const left = encoder.encode(a);
@@ -65,34 +63,5 @@ export async function verifySession(token: string | undefined | null) {
     return json.role === "admin" && typeof json.exp === "number" && json.exp > Date.now();
   } catch {
     return false;
-  }
-}
-
-export async function signMemberSession(secret: string, memberId: string) {
-  const payload = base64url(
-    encoder.encode(JSON.stringify({ role: "member", sub: memberId, exp: Date.now() + MEMBER_SESSION_MS })),
-  );
-  const signature = await hmac(secret, payload);
-  return `${payload}.${signature}`;
-}
-
-export async function readMemberSession(token: string | undefined | null) {
-  const secret = process.env.SESSION_SECRET;
-  if (!token || !secret) return null;
-  const [payload, signature] = token.split(".");
-  if (!payload || !signature) return null;
-  const expected = await hmac(secret, payload);
-  if (!safeEqual(expected, signature)) return null;
-  try {
-    const json = JSON.parse(new TextDecoder().decode(base64urlDecode(payload))) as {
-      role?: string;
-      sub?: string;
-      exp?: number;
-    };
-    if (json.role !== "member" || typeof json.sub !== "string" || !json.sub) return null;
-    if (typeof json.exp !== "number" || json.exp <= Date.now()) return null;
-    return { id: json.sub };
-  } catch {
-    return null;
   }
 }

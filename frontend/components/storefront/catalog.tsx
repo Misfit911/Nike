@@ -1,19 +1,19 @@
 "use client";
 
 import { useState, type CSSProperties, type SyntheticEvent } from "react";
-import { applyFilters, filterOptions, filtersActive } from "@/lib/catalog";
+import { applyFilters, filterOptions, filtersActive, onSale } from "@/lib/catalog";
+import { formatKes } from "@/lib/money";
 import { departmentHeading, type Product } from "@/lib/types";
 import { MediaImage } from "@/components/media-image";
 import { IconChevron, IconSliders } from "@/components/storefront/icons";
 import { useStore } from "@/components/storefront/context";
-import { ProductPrice } from "@/components/storefront/price";
 
 function cardImage(product: Product, colorId: string | null) {
   return product.images.find((image) => image.colorId === colorId) ?? product.images[0];
 }
 
 function ProductCard({ product }: { product: Product }) {
-  const { push, member } = useStore();
+  const { push } = useStore();
   const [colorId, setColorId] = useState<string | null>(product.colors[0]?.id ?? null);
   const image = cardImage(product, colorId);
   const open = () => push({ type: "product", productId: product.id });
@@ -46,7 +46,10 @@ function ProductCard({ product }: { product: Product }) {
           {product.badge ? <p className={`text-sm font-semibold text-sale ${product.colors.length > 0 ? "mt-2" : "mt-3"}`}>{product.badge}</p> : <div className="mt-3 h-5" />}
           <h3 className="text-[15px] font-medium leading-snug">{product.name}</h3>
           <p className="text-sm text-muted">{product.subtitle}</p>
-          <ProductPrice product={product} member={Boolean(member)} tone="card" />
+          <p className="mt-2 text-[15px] font-medium">{formatKes(product.priceCents)}</p>
+          {onSale(product) && product.compareAtPriceCents ? (
+            <p className="text-sm text-muted line-through">{formatKes(product.compareAtPriceCents)}</p>
+          ) : null}
         </button>
       </div>
     </article>
@@ -56,9 +59,8 @@ function ProductCard({ product }: { product: Product }) {
 export function Catalog() {
   const store = useStore();
   const { data, department, filters, searchQuery, setCategory, push, clearFilters } = store;
-  const signedIn = Boolean(store.member);
-  const products = applyFilters(data.products, department, filters, searchQuery, signedIn);
-  const options = filterOptions(data.products, department, filters.category, signedIn);
+  const products = applyFilters(data.products, department, filters, searchQuery);
+  const options = filterOptions(data.products, department, filters.category);
   const categories = data.categories.filter((category) => category.department === department);
   const hero = data.heroes.find((item) => item.slot === "hero3" && item.department === department);
   const chips = [

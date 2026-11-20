@@ -14,7 +14,6 @@ import {
   reorderHighlights,
   saveHero,
   saveSettings,
-  setProductActive,
   upsertProduct,
 } from "@/lib/db/mutations";
 import { OrderError, updateOrderStatus } from "@/lib/orders";
@@ -118,15 +117,6 @@ export async function saveProductAction(input: unknown) {
   const parsed = productInputSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the product" };
   await upsertProduct(parsed.data);
-  refresh();
-  return { ok: true as const };
-}
-
-export async function setProductActiveAction(id: string, active: boolean) {
-  await requireAdmin();
-  if (!id || typeof active !== "boolean") return { error: "Check the product" };
-  const updated = await setProductActive(id, active);
-  if (!updated) return { error: "Product was not found" };
   refresh();
   return { ok: true as const };
 }

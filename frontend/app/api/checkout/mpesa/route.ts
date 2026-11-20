@@ -2,7 +2,6 @@ import { z } from "zod";
 import { jsonError } from "@/lib/http";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { checkoutSchema } from "@/lib/validators";
-import { currentMember } from "@/lib/members";
 import { createPendingOrder, markFailed, mpesaAmount, OrderError } from "@/lib/orders";
 import { db } from "@/lib/db";
 import { orders } from "@/lib/db/schema";
@@ -24,8 +23,7 @@ export async function POST(request: Request) {
     const input = bodySchema.parse(await request.json());
     const phone = normalizeKePhone(input.mpesaPhone);
     if (!phone) throw new OrderError("Enter the Safaricom number that should receive the M-Pesa prompt");
-    const member = await currentMember();
-    const order = await createPendingOrder(input, "mpesa", Boolean(member));
+    const order = await createPendingOrder(input, "mpesa");
     try {
       const push = await stkPush({
         phone,

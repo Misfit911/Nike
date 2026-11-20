@@ -1,5 +1,3 @@
-import { unitPriceCents } from "@/lib/pricing";
-import { compareSizeLabels } from "@/lib/sizes";
 import type { Department, FilterState, Gender, PriceBand, Product } from "@/lib/types";
 
 export function priceBand(cents: number): PriceBand {
@@ -22,7 +20,6 @@ export function categoryFor(product: Product, department: Department) {
 }
 
 export function onSale(product: Product) {
-  if (product.membersOnly) return false;
   return product.compareAtPriceCents != null && product.compareAtPriceCents > product.priceCents;
 }
 
@@ -32,13 +29,7 @@ function genderMatches(product: Product, genders: Gender[]) {
   return product.gender === "unisex" && genders.some((gender) => gender === "men" || gender === "women");
 }
 
-export function applyFilters(
-  products: Product[],
-  department: Department,
-  filters: FilterState,
-  query: string,
-  member = false,
-) {
+export function applyFilters(products: Product[], department: Department, filters: FilterState, query: string) {
   const needle = query.trim().toLowerCase();
   return products.filter((product) => {
     if (!product.departments.some((entry) => entry.department === department)) return false;
@@ -49,7 +40,7 @@ export function applyFilters(
       const wantsKids = filters.kids[0] === "kids";
       if (product.kids !== wantsKids) return false;
     }
-    if (filters.prices.length > 0 && !filters.prices.includes(priceBand(unitPriceCents(product, member)))) return false;
+    if (filters.prices.length > 0 && !filters.prices.includes(priceBand(product.priceCents))) return false;
     if (filters.sale && !onSale(product)) return false;
     if (filters.sizes.length > 0 && !product.sizes.some((size) => filters.sizes.includes(size.label))) return false;
     if (
@@ -82,12 +73,7 @@ export type FilterOptions = {
   colors: string[];
 };
 
-export function filterOptions(
-  products: Product[],
-  department: Department,
-  category: string | null,
-  member = false,
-): FilterOptions {
+export function filterOptions(products: Product[], department: Department, category: string | null): FilterOptions {
   const pool = products.filter((product) => {
     if (!product.departments.some((entry) => entry.department === department)) return false;
     if (!category) return true;
@@ -104,7 +90,7 @@ export function filterOptions(
     genders.add(product.gender);
     if (product.kids) kids = true;
     else adults = true;
-    prices.add(priceBand(unitPriceCents(product, member)));
+    prices.add(priceBand(product.priceCents));
     if (onSale(product)) sale = true;
     for (const size of product.sizes) sizes.add(size.label);
     for (const color of product.colors) colors.add(color.name);
@@ -117,7 +103,7 @@ export function filterOptions(
     adults,
     prices: priceOrder.filter((band) => prices.has(band)),
     sale,
-    sizes: [...sizes].sort(compareSizeLabels),
+    sizes: [...sizes],
     colors: [...colors],
   };
 }

@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { selectionQuantity, variantQuantity } from "@/lib/stock";
-import { DEPARTMENTS, emptyFilters, type BagLine, type Department, type FilterState, type Gender, type KidsChoice, type KnownOrder, type OrderReceipt, type PriceBand, type StorefrontPayload } from "@/lib/types";
+import type { BagLine, Department, FilterState, Gender, KidsChoice, KnownOrder, OrderReceipt, PriceBand, StorefrontPayload } from "@/lib/types";
+import { emptyFilters } from "@/lib/types";
 
 export type OverlayInput =
   | { type: "menu" }
@@ -36,11 +37,8 @@ type StoreValue = {
   toggleSize: (size: string) => void;
   toggleColor: (color: string) => void;
   clearFilters: () => void;
-  member: { fullName: string; email: string } | null;
-  setMember: (member: { fullName: string; email: string } | null) => void;
-  accountOpen: boolean;
-  toggleAccount: () => void;
-  closeAccount: () => void;
+  online: boolean;
+  toggleOnline: () => void;
   bag: BagLine[];
   bagCount: number;
   addToBag: (input: { productId: string; size: string | null; color: string | null }) => void;
@@ -73,18 +71,11 @@ function toggleItem<T>(list: T[], value: T) {
 }
 
 export function StoreProvider({ data, children }: { data: StorefrontPayload; children: React.ReactNode }) {
-  const [department, setDepartment] = useState<Department>(() => {
-    return (
-      DEPARTMENTS.find((item) =>
-        data.products.some((product) => product.departments.some((entry) => entry.department === item)),
-      ) ?? "new"
-    );
-  });
+  const [department, setDepartment] = useState<Department>("new");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
-  const [member, setMember] = useState<{ fullName: string; email: string } | null>(null);
-  const [accountOpen, setAccountOpen] = useState(false);
+  const [online, setOnline] = useState(false);
   const [bag, setBag] = useState<BagLine[]>([]);
   const [favourites, setFavourites] = useState<string[]>([]);
   const [knownOrders, setKnownOrders] = useState<KnownOrder[]>([]);
@@ -112,6 +103,7 @@ export function StoreProvider({ data, children }: { data: StorefrontPayload; chi
       setBag(JSON.parse(localStorage.getItem("nn-bag") || "[]"));
       setFavourites(JSON.parse(localStorage.getItem("nn-favourites") || "[]"));
       setKnownOrders(JSON.parse(localStorage.getItem("nn-orders") || "[]"));
+      setOnline(localStorage.getItem("nn-online") === "1");
     } catch {
       setBag([]);
     } finally {
@@ -135,24 +127,12 @@ export function StoreProvider({ data, children }: { data: StorefrontPayload; chi
   }, [knownOrders, ready]);
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch("/api/members/me");
-        if (!response.ok) return;
-        const json = (await response.json()) as { member: { fullName: string; email: string } | null };
-        if (!cancelled) setMember(json.member);
-      } catch {
-        // The shop stays usable when the member check cannot be reached.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (!ready) return;
+    localStorage.setItem("nn-online", online ? "1" : "0");
+  }, [online, ready]);
 
   useEffect(() => {
-    if (overlays.length === 0 && !accountOpen) return;
+    if (overlays.length === 0) return;
     const html = document.documentElement;
     const previousHtml = html.style.overflow;
     const previousBody = document.body.style.overflow;
@@ -162,7 +142,7 @@ export function StoreProvider({ data, children }: { data: StorefrontPayload; chi
       html.style.overflow = previousHtml;
       document.body.style.overflow = previousBody;
     };
-  }, [accountOpen, overlays.length]);
+  }, [overlays.length]);
 
   const value = useMemo<StoreValue>(() => {
     const scrollToCatalog = () => {
@@ -228,11 +208,8 @@ export function StoreProvider({ data, children }: { data: StorefrontPayload; chi
       toggleSize: (size) => setFilters((current) => ({ ...current, sizes: toggleItem(current.sizes, size) })),
       toggleColor: (color) => setFilters((current) => ({ ...current, colors: toggleItem(current.colors, color) })),
       clearFilters: () => setFilters(emptyFilters),
-      member,
-      setMember,
-      accountOpen,
-      toggleAccount: () => setAccountOpen((open) => !open),
-      closeAccount: () => setAccountOpen(false),
+      online,
+      toggleOnline: () => setOnline((current) => !current),
       bag,
       bagCount: bag.reduce((sum, line) => sum + line.quantity, 0),
       addToBag: ({ productId, size, color }) => {
@@ -301,7 +278,7 @@ export function StoreProvider({ data, children }: { data: StorefrontPayload; chi
       navDepartments,
       setNavDepartments,
     };
-  }, [accountOpen, bag, data, department, favourites, filters, knownOrders, member, navDepartments, overlays, searchOpen, searchQuery]);
+  }, [bag, data, department, favourites, filters, knownOrders, navDepartments, online, overlays, searchOpen, searchQuery]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

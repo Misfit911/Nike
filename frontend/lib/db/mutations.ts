@@ -86,11 +86,6 @@ export async function deleteCategory(id: string) {
   await db.delete(categories).where(eq(categories.id, id));
 }
 
-export async function setProductActive(id: string, active: boolean) {
-  const updated = await db.update(products).set({ active }).where(eq(products.id, id)).returning({ id: products.id });
-  return updated.length > 0;
-}
-
 export async function deleteProduct(id: string) {
   await db.transaction(async (tx) => {
     await tx.delete(productImages).where(eq(productImages.productId, id));
@@ -111,7 +106,6 @@ export async function upsertProduct(input: ProductInput) {
       deliveryReturns: input.deliveryReturns,
       priceCents: kesToCents(input.priceKes),
       compareAtPriceCents: input.compareAtKes == null ? null : kesToCents(input.compareAtKes),
-      membersOnly: input.membersOnly,
       badge: input.badge || null,
       gender: input.gender,
       kids: input.kids,

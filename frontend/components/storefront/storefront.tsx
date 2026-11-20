@@ -8,7 +8,6 @@ import { StoreProvider, useStore } from "@/components/storefront/context";
 import { Footer } from "@/components/storefront/footer";
 import { Newsletter } from "@/components/storefront/newsletter";
 import { IconBag, IconClose, IconMenu, IconSearch, IconUser } from "@/components/storefront/icons";
-import { MemberDialog } from "@/components/storefront/member-dialog";
 import { Overlays } from "@/components/storefront/overlays";
 
 export function Storefront({ data }: { data: StorefrontPayload }) {
@@ -258,15 +257,9 @@ function Shell() {
           <button ref={searchButtonRef} type="button" aria-label="Search" onClick={store.toggleSearch} className="p-1">
             <IconSearch />
           </button>
-          <button
-            type="button"
-            aria-expanded={store.accountOpen}
-            aria-label={store.member ? "Account" : "Sign in"}
-            onClick={store.toggleAccount}
-            className="relative p-1"
-          >
+          <button type="button" aria-pressed={store.online} aria-label={store.online ? "Online" : "Account"} onClick={store.toggleOnline} className="relative p-1">
             <IconUser />
-            {store.member ? (
+            {store.online ? (
               <span className="absolute right-0.5 top-0.5 flex h-2.5 w-2.5">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
                 <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500" />
@@ -342,7 +335,6 @@ function Shell() {
       <Footer settings={store.data.settings} flush />
       </div>
       <Overlays />
-      <MemberDialog />
     </div>
   );
 }

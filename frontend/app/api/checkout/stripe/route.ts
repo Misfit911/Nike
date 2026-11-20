@@ -1,7 +1,6 @@
 import { checkoutSchema } from "@/lib/validators";
 import { jsonError } from "@/lib/http";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
-import { currentMember } from "@/lib/members";
 import { createPendingOrder, markFailed, OrderError } from "@/lib/orders";
 import { db } from "@/lib/db";
 import { orders } from "@/lib/db/schema";
@@ -18,8 +17,7 @@ export async function POST(request: Request) {
       throw new OrderError("Too many payment attempts. Wait a few minutes and try again.", 429);
     }
     const input = checkoutSchema.parse(await request.json());
-    const member = await currentMember();
-    const order = await createPendingOrder(input, "card", Boolean(member));
+    const order = await createPendingOrder(input, "card");
     try {
       const stripe = getStripe();
       const intent = await stripe.paymentIntents.create({

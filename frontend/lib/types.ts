@@ -46,7 +46,6 @@ export type Product = {
   gender: Gender;
   kids: boolean;
   active: boolean;
-  membersOnly: boolean;
   departments: ProductDepartment[];
   colors: ProductColor[];
   sizes: ProductSize[];

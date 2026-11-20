@@ -42,8 +42,6 @@ export function OrdersPanel() {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [readiness, setReadiness] = useState<PaymentReadiness | null>(null);
   const [filter, setFilter] = useState<Filter>("fulfil");
-  const [query, setQuery] = useState("");
-  const [search, setSearch] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [checks, setChecks] = useState<ReconcileResult[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -58,27 +56,10 @@ export function OrdersPanel() {
     void load();
   }, []);
 
-  const needle = search.trim().toLowerCase();
   const visible = orders.filter((order) => {
-    if (filter === "fulfil" && !isOpenFulfilment(order.status)) return false;
-    if (filter === "pending" && order.status !== "pending") return false;
-    if (!needle) return true;
-    const haystack = [
-      order.orderNumber,
-      order.fullName,
-      order.email,
-      order.phone,
-      order.status,
-      order.area,
-      order.street,
-      order.note,
-      order.mpesaReceipt,
-      ...order.items.flatMap((item) => [item.name, item.color, item.size]),
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(needle);
+    if (filter === "fulfil") return isOpenFulfilment(order.status);
+    if (filter === "pending") return order.status === "pending";
+    return true;
   });
 
   return (
@@ -152,26 +133,7 @@ export function OrdersPanel() {
             ))}
           </div>
         </div>
-        <form
-          className="mt-4 flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setSearch(query);
-          }}
-        >
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Order number, name, email, or phone"
-            className="min-w-0 flex-1 rounded-lg border border-line px-3 py-2 text-sm"
-          />
-          <button type="submit" className="shrink-0 rounded-full bg-ink px-4 py-2 text-sm text-white">
-            Search
-          </button>
-        </form>
-        {visible.length === 0 ? (
-          <p className="mt-4 text-sm text-muted">{needle ? "No orders match this search." : "No orders in this list."}</p>
-        ) : null}
+        {visible.length === 0 ? <p className="mt-4 text-sm text-muted">No orders in this list.</p> : null}
         <div className="mt-4 space-y-4">
           {visible.map((order) => (
             <article key={order.id} className="border-t border-line pt-4 text-sm leading-6">
