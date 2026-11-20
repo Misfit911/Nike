@@ -13,6 +13,7 @@ import {
   saveHeroAction,
   saveProductAction,
   saveSettingsAction,
+  setProductActiveAction,
 } from "@/app/admin/actions";
 import { OrdersPanel } from "@/app/admin/orders-panel";
 import { ImageField } from "@/components/image-field";
@@ -275,6 +276,7 @@ function blankProduct(): ProductDraft {
     deliveryReturns: DEMO_DELIVERY_RETURNS,
     priceKes: "",
     compareAtKes: "",
+    membersOnly: false,
     badge: "",
     gender: "unisex",
     kids: false,
@@ -295,6 +297,7 @@ type ProductDraft = {
   deliveryReturns: string;
   priceKes: string;
   compareAtKes: string;
+  membersOnly: boolean;
   badge: string;
   gender: Gender;
   kids: boolean;
@@ -315,6 +318,7 @@ function fromProduct(product: Product): ProductDraft {
     deliveryReturns: product.deliveryReturns,
     priceKes: String(product.priceCents / 100),
     compareAtKes: product.compareAtPriceCents ? String(product.compareAtPriceCents / 100) : "",
+    membersOnly: product.membersOnly,
     badge: product.badge ?? "",
     gender: product.gender,
     kids: product.kids,
@@ -334,6 +338,8 @@ function fromProduct(product: Product): ProductDraft {
 function Products({ data }: { data: StorefrontPayload }) {
   const router = useRouter();
   const [editing, setEditing] = useState<ProductDraft | null>(null);
+  const [visibility, setVisibility] = useState<Record<string, boolean>>({});
+  const [visibilityError, setVisibilityError] = useState<string | null>(null);
   if (editing) return <ProductForm initial={editing} onDone={() => setEditing(null)} />;
   return (
     <div className="min-w-0 overflow-hidden rounded-2xl bg-white p-4 sm:p-5">
@@ -344,36 +350,82 @@ function Products({ data }: { data: StorefrontPayload }) {
         </button>
       </div>
       <ul className="mt-4 divide-y divide-line">
-        {data.products.map((product) => (
-          <li key={product.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-            <div className="min-w-0">
-              <p className="break-words font-medium">{product.name}</p>
-              <p className="text-muted">{product.active ? "Visible" : "Hidden"} · KES {product.priceCents / 100}</p>
-            </div>
-            <div className="flex shrink-0 gap-3">
-              <button type="button" className="underline" onClick={() => setEditing(fromProduct(product))}>Edit</button>
-              <button
-                type="button"
-                className="underline"
-                onClick={async () => {
-                  if (!window.confirm(`Delete ${product.name}?`)) return;
-                  await deleteProductAction(product.id);
-                  router.refresh();
-                }}
-              >
-                Delete
-              </button>
-            </div>
-          </li>
-        ))}
+        {data.products.map((product) => {
+          const visible = visibility[product.id] ?? product.active;
+          return (
+            <li key={product.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+              <div className="min-w-0">
+                <p className="break-words font-medium">{product.name}</p>
+                <label className="mt-1 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={visible}
+                    onChange={async (event) => {
+                      const active = event.target.checked;
+                      setVisibility((current) => ({ ...current, [product.id]: active }));
+                      setVisibilityError(null);
+                      const result = await setProductActiveAction(product.id, active);
+                      if ("error" in result && result.error) {
+                        setVisibility((current) => ({ ...current, [product.id]: !active }));
+                        setVisibilityError(result.error);
+                        return;
+                      }
+                      router.refresh();
+                    }}
+                  />
+                  Visible on the storefront
+                </label>
+                <p className="text-muted">{product.membersOnly ? "Members only · " : ""}KES {product.priceCents / 100}</p>
+              </div>
+              <div className="flex shrink-0 gap-3">
+                <button type="button" className="underline" onClick={() => setEditing(fromProduct(product))}>Edit</button>
+                <button
+                  type="button"
+                  className="underline"
+                  onClick={async () => {
+                    if (!window.confirm(`Delete ${product.name}?`)) return;
+                    await deleteProductAction(product.id);
+                    router.refresh();
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
+      {visibilityError ? <p className="mt-3 text-sm text-sale">{visibilityError}</p> : null}
     </div>
   );
+}
+
+type ImageGroup = { colorName: string; alt: string; links: string[] };
+
+function toImageGroups(images: ProductDraft["images"]): ImageGroup[] {
+  const groups: ImageGroup[] = [];
+  for (const image of images) {
+    const existing = groups.find((group) => group.colorName === image.colorName && group.alt === image.alt);
+    if (existing) existing.links.push(image.image);
+    else groups.push({ colorName: image.colorName, alt: image.alt, links: [image.image] });
+  }
+  return groups.length > 0 ? groups : [{ colorName: "", alt: "", links: [""] }];
+}
+
+function imagesFromGroups(groups: ImageGroup[]) {
+  const rows = groups.flatMap((group) =>
+    group.links
+      .map((image) => image.trim())
+      .filter(Boolean)
+      .map((image) => ({ image, alt: group.alt, colorName: group.colorName || null })),
+  );
+  return rows.length > 0 ? rows : [{ image: "", alt: "", colorName: null }];
 }
 
 function ProductForm({ initial, onDone }: { initial: ProductDraft; onDone: () => void }) {
   const router = useRouter();
   const [form, setForm] = useState(initial);
+  const [imageGroups, setImageGroups] = useState(() => toImageGroups(initial.images));
   const [message, setMessage] = useState<string | null>(null);
 
   function patchList<T>(key: "departments" | "colors" | "sizes" | "images", index: number, patch: Partial<T>) {
@@ -397,6 +449,7 @@ function ProductForm({ initial, onDone }: { initial: ProductDraft; onDone: () =>
           deliveryReturns: form.deliveryReturns,
           priceKes: Number(form.priceKes),
           compareAtKes: form.compareAtKes.trim() ? Number(form.compareAtKes) : null,
+          membersOnly: form.membersOnly,
           badge: form.badge.trim() ? form.badge.trim() : null,
           gender: form.gender,
           kids: form.kids,
@@ -405,7 +458,7 @@ function ProductForm({ initial, onDone }: { initial: ProductDraft; onDone: () =>
           colors: form.colors,
           sizes: form.sizes,
           stock: stockCombinations(form.colors, form.sizes, form.stock),
-          images: form.images.map((image) => ({ ...image, colorName: image.colorName || null })),
+          images: imagesFromGroups(imageGroups),
         });
         setMessage(savedNote(result));
         if ("ok" in result) {
@@ -420,6 +473,11 @@ function ProductForm({ initial, onDone }: { initial: ProductDraft; onDone: () =>
       <label className="block text-sm">Subtitle<input className="mt-1 w-full rounded-lg border border-line px-3 py-2" value={form.subtitle} onChange={(event) => setForm({ ...form, subtitle: event.target.value })} /></label>
       <label className="block text-sm">Price in KES<input className="mt-1 w-full rounded-lg border border-line px-3 py-2" value={form.priceKes} onChange={(event) => setForm({ ...form, priceKes: event.target.value })} /></label>
       <label className="block text-sm">Compare-at price in KES<input className="mt-1 w-full rounded-lg border border-line px-3 py-2" value={form.compareAtKes} onChange={(event) => setForm({ ...form, compareAtKes: event.target.value })} /></label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={form.membersOnly} onChange={(event) => setForm({ ...form, membersOnly: event.target.checked })} />
+        Members only
+      </label>
+      <p className="text-sm text-muted">Members pay the set price. Everyone else pays the compare-at price.</p>
       <label className="block text-sm">Badge<input className="mt-1 w-full rounded-lg border border-line px-3 py-2" value={form.badge} onChange={(event) => setForm({ ...form, badge: event.target.value })} /></label>
       <label className="block text-sm">Gender
         <select className="mt-1 w-full rounded-lg border border-line px-3 py-2" value={form.gender} onChange={(event) => setForm({ ...form, gender: event.target.value as Gender })}>
@@ -429,7 +487,6 @@ function ProductForm({ initial, onDone }: { initial: ProductDraft; onDone: () =>
         </select>
       </label>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.kids} onChange={(event) => setForm({ ...form, kids: event.target.checked })} /> Kids product</label>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> Visible on the storefront</label>
       <label className="block text-sm">Description<textarea className="mt-1 w-full rounded-lg border border-line px-3 py-2" rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
       <label className="block text-sm">Delivery and returns<textarea className="mt-1 w-full rounded-lg border border-line px-3 py-2" rows={3} value={form.deliveryReturns} onChange={(event) => setForm({ ...form, deliveryReturns: event.target.value })} /></label>
 
@@ -497,15 +554,86 @@ function ProductForm({ initial, onDone }: { initial: ProductDraft; onDone: () =>
 
       <div className="space-y-3">
         <p className="text-sm font-medium">Images</p>
-        {form.images.map((image, index) => (
-          <div key={`image-${index}`} className="rounded-xl border border-line p-3">
-            <ImageField label="Image link or upload" value={image.image} onChange={(value) => patchList("images", index, { image: value })} />
-            <input className="mt-2 w-full rounded-lg border border-line px-2 py-2 text-sm" placeholder="Alt text" value={image.alt} onChange={(event) => patchList("images", index, { alt: event.target.value })} />
-            <input className="mt-2 w-full rounded-lg border border-line px-2 py-2 text-sm" placeholder="Colour name this image belongs to" value={image.colorName} onChange={(event) => patchList("images", index, { colorName: event.target.value })} />
-            <button type="button" className="mt-2 text-sm underline" onClick={() => setForm({ ...form, images: form.images.filter((_, item) => item !== index) })}>Remove image</button>
+        <p className="text-xs text-muted">One colour and alt text can have several image links.</p>
+        {imageGroups.map((group, index) => (
+          <div key={`image-group-${index}`} className="space-y-2 rounded-xl border border-line p-3">
+            <input
+              className="w-full rounded-lg border border-line px-2 py-2 text-sm"
+              placeholder="Colour name these images belong to"
+              value={group.colorName}
+              onChange={(event) => {
+                const colorName = event.target.value;
+                setImageGroups((current) => current.map((entry, item) => (item === index ? { ...entry, colorName } : entry)));
+              }}
+            />
+            <input
+              className="w-full rounded-lg border border-line px-2 py-2 text-sm"
+              placeholder="Alt text"
+              value={group.alt}
+              onChange={(event) => {
+                const alt = event.target.value;
+                setImageGroups((current) => current.map((entry, item) => (item === index ? { ...entry, alt } : entry)));
+              }}
+            />
+            {group.links.map((link, linkIndex) => (
+              <div key={`image-link-${index}-${linkIndex}`}>
+                <ImageField
+                  label={group.links.length > 1 ? `Image link ${linkIndex + 1}` : "Image link or upload"}
+                  value={link}
+                  onChange={(value) => {
+                    setImageGroups((current) =>
+                      current.map((entry, item) =>
+                        item === index ? { ...entry, links: entry.links.map((itemLink, itemIndex) => (itemIndex === linkIndex ? value : itemLink)) } : entry,
+                      ),
+                    );
+                  }}
+                />
+                {group.links.length > 1 ? (
+                  <button
+                    type="button"
+                    className="mt-2 text-sm underline"
+                    onClick={() => {
+                      setImageGroups((current) =>
+                        current.map((entry, item) =>
+                          item === index ? { ...entry, links: entry.links.filter((_, itemIndex) => itemIndex !== linkIndex) } : entry,
+                        ),
+                      );
+                    }}
+                  >
+                    Remove link
+                  </button>
+                ) : null}
+              </div>
+            ))}
+            <div className="flex flex-wrap gap-4">
+              <button
+                type="button"
+                className="text-sm underline"
+                onClick={() => {
+                  setImageGroups((current) =>
+                    current.map((entry, item) => (item === index ? { ...entry, links: [...entry.links, ""] } : entry)),
+                  );
+                }}
+              >
+                Add image link
+              </button>
+              <button
+                type="button"
+                className="text-sm underline"
+                onClick={() => setImageGroups((current) => current.filter((_, item) => item !== index))}
+              >
+                Remove images
+              </button>
+            </div>
           </div>
         ))}
-        <button type="button" className="text-sm underline" onClick={() => setForm({ ...form, images: [...form.images, { image: "", alt: "", colorName: "" }] })}>Add image</button>
+        <button
+          type="button"
+          className="text-sm underline"
+          onClick={() => setImageGroups((current) => [...current, { colorName: "", alt: "", links: [""] }])}
+        >
+          Add image
+        </button>
       </div>
 
       <div className="flex gap-3">

@@ -3,7 +3,50 @@ import test from "node:test";
 import { mpesaOutcome } from "./mpesa";
 import { nextStatuses } from "./order-status";
 import { decideMpesa, decideStripe, readPaymentReadiness } from "./reconcile";
-import { applyReservation, mergeDemand, selectionQuantity, variantQuantity } from "./stock";
+import { isMembersOnly, unitPriceCents } from "./pricing";
+import { sortSizes } from "./sizes";
+import { applyReservation, mergeDemand, selectionQuantity, stockCombinations, variantQuantity } from "./stock";
+
+test("members pay the set price and guests pay compare-at only on members-only products", () => {
+  const deal = { membersOnly: true, priceCents: 1000, compareAtPriceCents: 1500 };
+  const regular = { membersOnly: false, priceCents: 1000, compareAtPriceCents: 1500 };
+  const plain = { membersOnly: false, priceCents: 1000, compareAtPriceCents: null };
+  assert.equal(isMembersOnly(deal), true);
+  assert.equal(isMembersOnly(regular), false);
+  assert.equal(unitPriceCents(deal, true), 1000);
+  assert.equal(unitPriceCents(deal, false), 1500);
+  assert.equal(unitPriceCents(regular, false), 1000);
+  assert.equal(unitPriceCents(plain, false), 1000);
+});
+
+test("shoe sizes sort from smallest to largest and apparel keeps letter order", () => {
+  const shoes = sortSizes([
+    { label: "UK 10", sort: 0 },
+    { label: "UK 6", sort: 1 },
+    { label: "UK 5.5", sort: 2 },
+    { label: "UK 11", sort: 3 },
+  ]);
+  assert.deepEqual(shoes.map((size) => size.label), ["UK 5.5", "UK 6", "UK 10", "UK 11"]);
+  const apparel = sortSizes([
+    { label: "L", sort: 0 },
+    { label: "XS", sort: 1 },
+    { label: "M", sort: 2 },
+  ]);
+  assert.deepEqual(apparel.map((size) => size.label), ["XS", "M", "L"]);
+});
+
+test("stock rows stay unique when a colour or size is listed twice", () => {
+  const rows = stockCombinations(
+    [{ name: "Black" }, { name: " black " }],
+    [{ label: "UK 12.5" }, { label: "UK 12.5" }, { label: "UK 13" }],
+    [{ colorName: "Black", sizeLabel: "UK 12.5", quantity: 4 }],
+  );
+  assert.deepEqual(
+    rows.map((row) => `${row.colorName}|${row.sizeLabel}`),
+    ["Black|UK 12.5", "Black|UK 13"],
+  );
+  assert.equal(rows[0]?.quantity, 4);
+});
 
 test("stock is tracked per colour and size", () => {
   const stock = [

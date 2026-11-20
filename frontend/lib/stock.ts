@@ -56,13 +56,25 @@ export function applyReservation(available: number, requested: number) {
   return { ok: true as const, next: available - requested };
 }
 
+function uniqueNames(values: string[]) {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const value of values) {
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(value);
+  }
+  return unique;
+}
+
 export function stockCombinations(
   colors: { name: string }[],
   sizes: { label: string }[],
   current: StockRow[],
 ) {
-  const colorNames = colors.map((color) => color.name.trim()).filter(Boolean);
-  const sizeLabels = sizes.map((size) => size.label.trim()).filter(Boolean);
+  const colorNames = uniqueNames(colors.map((color) => color.name.trim()).filter(Boolean));
+  const sizeLabels = uniqueNames(sizes.map((size) => size.label.trim()).filter(Boolean));
   const colorsOrPlain = colorNames.length > 0 ? colorNames : [""];
   const sizesOrPlain = sizeLabels.length > 0 ? sizeLabels : [""];
   return colorsOrPlain.flatMap((colorName) =>

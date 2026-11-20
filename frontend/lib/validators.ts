@@ -38,6 +38,7 @@ export const productInputSchema = z.object({
   deliveryReturns: z.string().trim().min(1).max(4000),
   priceKes: z.number().positive().max(10_000_000),
   compareAtKes: z.number().positive().max(10_000_000).nullable(),
+  membersOnly: z.boolean(),
   badge: z.string().trim().max(40).nullable(),
   gender: z.enum(GENDERS),
   kids: z.boolean(),
@@ -83,6 +84,21 @@ export const productInputSchema = z.object({
     .min(1),
 })
   .superRefine((value, context) => {
+    if (value.membersOnly) {
+      if (value.compareAtKes == null) {
+        context.addIssue({
+          code: "custom",
+          path: ["compareAtKes"],
+          message: "Enter a compare-at price for members-only products",
+        });
+      } else if (value.compareAtKes <= value.priceKes) {
+        context.addIssue({
+          code: "custom",
+          path: ["compareAtKes"],
+          message: "Compare-at price must be higher than the set price",
+        });
+      }
+    }
     const colorNames = value.colors.map((color) => color.name.trim().toLowerCase());
     const sizeLabels = value.sizes.map((size) => size.label.trim().toLowerCase());
     if (new Set(colorNames).size !== colorNames.length) {
@@ -112,6 +128,19 @@ export const productInputSchema = z.object({
 
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
 export type ProductInput = z.infer<typeof productInputSchema>;
+
+export const memberSignupSchema = z.object({
+  fullName: z.string().trim().min(2, "Enter your full name").max(120),
+  email: z.string().trim().email("Enter a valid email address").max(200),
+  password: z.string().min(8, "Use at least 8 characters").max(200),
+  remember: z.boolean().optional().default(false),
+});
+
+export const memberLoginSchema = z.object({
+  email: z.string().trim().email("Enter a valid email address").max(200),
+  password: z.string().min(1, "Enter your password").max(200),
+  remember: z.boolean().optional().default(false),
+});
 
 export const settingsInputSchema = z.object({
   companyName: z.string().trim().min(1).max(80),

@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { deliveryFeeFor, formatKes } from "@/lib/money";
+import { unitPriceCents } from "@/lib/pricing";
 import { variantQuantity } from "@/lib/stock";
 import { normalizeKePhone } from "@/lib/phone";
 import type { OrderReceipt } from "@/lib/types";
 import { MediaImage } from "@/components/media-image";
 import { Footer } from "@/components/storefront/footer";
 import { IconChevron } from "@/components/storefront/icons";
+import { ProductPrice } from "@/components/storefront/price";
 import { BackLink } from "@/components/storefront/sheet";
 import { useStore } from "@/components/storefront/context";
 
@@ -56,7 +58,8 @@ export function CheckoutSheet() {
     (entry) => entry.product && entry.line.quantity > variantQuantity(entry.product.stock, entry.line.color, entry.line.size),
   );
   const oversold = Boolean(stockShort);
-  const subtotal = lines.reduce((sum, entry) => sum + (entry.product ? entry.product.priceCents * entry.line.quantity : 0), 0);
+  const signedIn = Boolean(store.member);
+  const subtotal = lines.reduce((sum, entry) => sum + (entry.product ? unitPriceCents(entry.product, signedIn) * entry.line.quantity : 0), 0);
   const delivery = deliveryFeeFor(subtotal, fulfillment, data.settings);
   const total = subtotal + delivery;
   const contactReady =
@@ -226,7 +229,7 @@ export function CheckoutSheet() {
                   {product?.images[0] ? <MediaImage src={product.images[0].image} alt="" className="h-full w-full object-cover" /> : null}
                 </div>
                 <div>
-                  <p className="font-medium">{product ? formatKes(product.priceCents) : "Unavailable"}</p>
+                  {product ? <ProductPrice product={product} member={signedIn} /> : <p className="font-medium">Unavailable</p>}
                   <p>{product?.name ?? "Removed product"}</p>
                   <p className="text-muted">{[line.color, line.size].filter(Boolean).join(" · ")}</p>
                   <p className="text-muted">Qty {line.quantity}</p>
@@ -426,7 +429,8 @@ function Review({
   busy: boolean;
   label: string;
 }) {
-  const { bag, data } = useStore();
+  const { bag, data, member } = useStore();
+  const signedIn = Boolean(member);
   return (
     <div className="mt-6 border-t border-line pt-5">
       <h3 className="text-2xl font-medium">Order Review</h3>
@@ -438,7 +442,7 @@ function Review({
               <span>
                 {product?.name ?? "Item"} × {line.quantity}
               </span>
-              <span>{product ? formatKes(product.priceCents * line.quantity) : ""}</span>
+              {product ? <ProductPrice product={product} member={signedIn} quantity={line.quantity} /> : <span />}
             </li>
           );
         })}

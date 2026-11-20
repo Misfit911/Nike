@@ -2,7 +2,9 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db/index";
 import { orderItems, orders, products, productColors, productImages, productSizes, storeSettings } from "@/lib/db/schema";
 import { releaseStock, takeStock } from "@/lib/inventory";
+import { sendOrderReceipt, sendOrderStatusEmail } from "@/lib/email";
 import { deliveryFeeFor, shillingsFromCents } from "@/lib/money";
+import { unitPriceCents } from "@/lib/pricing";
 import { mpesaOutcome, stkQuery } from "@/lib/mpesa";
 import { nextStatuses } from "@/lib/order-status";
 import { normalizeKePhone } from "@/lib/phone";
@@ -32,7 +34,7 @@ async function settingsRow() {
   return row;
 }
 
-export async function priceCheckout(input: CheckoutInput) {
+export async function priceCheckout(input: CheckoutInput, member = false) {
   const settings = await settingsRow();
   const lines = [];
   for (const item of input.items) {
@@ -56,7 +58,7 @@ export async function priceCheckout(input: CheckoutInput) {
       subtitle: product.subtitle,
       size: item.size,
       color: item.color,
-      unitPriceCents: product.priceCents,
+      unitPriceCents: unitPriceCents(product, member),
       quantity: item.quantity,
       image,
     });
@@ -73,8 +75,8 @@ export async function priceCheckout(input: CheckoutInput) {
   };
 }
 
-export async function createPendingOrder(input: CheckoutInput, paymentMethod: "card" | "mpesa") {
-  const priced = await priceCheckout(input);
+export async function createPendingOrder(input: CheckoutInput, paymentMethod: "card" | "mpesa", member = false) {
+  const priced = await priceCheckout(input, member);
   const id = crypto.randomUUID();
   const number = orderNumber();
   await db.transaction(async (tx) => {
@@ -191,7 +193,7 @@ export function emailMatches(orderEmail: string, email: string) {
 }
 
 export async function markPaid(orderId: string, extra: { mpesaReceipt?: string | null; stripePaymentIntentId?: string }) {
-  await db
+  const updated = await db
     .update(orders)
     .set({
       status: "paid",
@@ -199,7 +201,15 @@ export async function markPaid(orderId: string, extra: { mpesaReceipt?: string |
       ...(extra.mpesaReceipt ? { mpesaReceipt: extra.mpesaReceipt } : {}),
       ...(extra.stripePaymentIntentId ? { stripePaymentIntentId: extra.stripePaymentIntentId } : {}),
     })
-    .where(and(eq(orders.id, orderId), eq(orders.status, "pending")));
+    .where(and(eq(orders.id, orderId), eq(orders.status, "pending")))
+    .returning({ id: orders.id });
+  if (updated.length === 0) return;
+  try {
+    const receipt = await toReceipt(orderId);
+    if (receipt) await sendOrderReceipt(receipt);
+  } catch (error) {
+    console.error("Receipt email failed", error);
+  }
 }
 
 export async function markFailed(orderId: string, detail: string) {
@@ -303,7 +313,7 @@ export async function syncMpesaOrder(orderId: string) {
 }
 
 export async function updateOrderStatus(orderId: string, next: string) {
-  await db.transaction(async (tx) => {
+  const notice = await db.transaction(async (tx) => {
     const [current] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
     if (!current) throw new OrderError("Order not found", 404);
     if (!nextStatuses(current.status, current.fulfillment).includes(next)) {
@@ -321,6 +331,13 @@ export async function updateOrderStatus(orderId: string, next: string) {
         inventoryHeld: next === "cancelled" ? false : current.inventoryHeld,
       })
       .where(eq(orders.id, orderId));
+    return { email: current.email, fullName: current.fullName, orderNumber: current.orderNumber };
+  });
+  await sendOrderStatusEmail({
+    to: notice.email,
+    fullName: notice.fullName,
+    orderNumber: notice.orderNumber,
+    status: next,
   });
 }
 

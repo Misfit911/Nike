@@ -8,6 +8,7 @@
   --color-line: #e5e5e5;
   --color-canvas: #f6f6f6;
   --color-sale: #d30000;
+  --color-member: #128a00;
 }
 
 html,
@@ -63,7 +64,7 @@ summary::-webkit-details-marker {
 }
 
 .marquee-track {
-  animation: marquee 42s linear infinite;
+  animation: marquee 50s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

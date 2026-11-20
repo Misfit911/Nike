@@ -47,6 +47,7 @@ export const products = pgTable("products", {
   gender: text("gender").notNull(),
   kids: boolean("kids").notNull().default(false),
   active: boolean("active").notNull().default(true),
+  membersOnly: boolean("members_only").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -129,6 +130,14 @@ export const orders = pgTable("orders", {
   mpesaMerchantRequestId: text("mpesa_merchant_request_id"),
   mpesaReceipt: text("mpesa_receipt"),
   inventoryHeld: boolean("inventory_held").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const members = pgTable("members", {
+  id: text("id").primaryKey(),
+  fullName: text("full_name").notNull(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
